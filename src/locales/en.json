@@ -89,5 +89,49 @@
     "networkError": "Network error: Unable to connect to server",
     "requestError": "Error occurred while configuring request",
     "unexpected": "An unexpected error occurred"
+  },
+  "auth": {
+    "loginIntro": "Log in with your PeerTube account to upload videos.",
+    "host": "Instance",
+    "username": "Username or email",
+    "password": "Password",
+    "otp": "Two-factor code",
+    "login": "Log in",
+    "loggingIn": "Logging in...",
+    "logout": "Log out",
+    "errors": {
+      "missingFields": "Please enter the instance, username and password",
+      "invalidCredentials": "Incorrect username or password",
+      "needOtp": "Please enter your two-factor code",
+      "invalidOtp": "Invalid two-factor code",
+      "network": "Could not connect to the server",
+      "sessionExpired": "Your session has expired. Please log in again",
+      "unknown": "Login failed"
+    }
+  },
+  "upload": {
+    "title": "Upload",
+    "file": "Video file",
+    "noFile": "No file selected",
+    "name": "Title",
+    "channel": "Channel",
+    "privacy": "Privacy",
+    "privacyOptions": {
+      "public": "Public",
+      "unlisted": "Unlisted",
+      "private": "Private",
+      "internal": "Internal"
+    },
+    "description": "Description",
+    "nsfw": "Sensitive content (NSFW)",
+    "start": "Upload",
+    "cancel": "Cancel",
+    "success": "Upload complete",
+    "errors": {
+      "noFile": "Please select a video file",
+      "noChannel": "Please select a channel",
+      "canceled": "Upload canceled",
+      "failed": "Upload failed"
+    }
   }
 }

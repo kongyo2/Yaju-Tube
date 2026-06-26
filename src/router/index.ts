@@ -36,6 +36,10 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('@/views/Tab5Page.vue')
       },
       {
+        path: 'tab6', // 動画アップロード
+        component: () => import('@/views/Tab6Page.vue')
+      },
+      {
         path: 'video/:videoId',
         component: () => import('@/views/VideoPlayerPage.vue'),
         props: true

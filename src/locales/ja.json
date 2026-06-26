@@ -89,5 +89,49 @@
     "networkError": "ネットワークエラー: サーバーに接続できません",
     "requestError": "リクエストの設定中にエラーが発生しました",
     "unexpected": "予期しないエラーが発生しました"
+  },
+  "auth": {
+    "loginIntro": "動画を投稿するには PeerTube アカウントでログインしてください。",
+    "host": "インスタンス",
+    "username": "ユーザー名またはメールアドレス",
+    "password": "パスワード",
+    "otp": "二段階認証コード",
+    "login": "ログイン",
+    "loggingIn": "ログイン中...",
+    "logout": "ログアウト",
+    "errors": {
+      "missingFields": "インスタンス・ユーザー名・パスワードを入力してください",
+      "invalidCredentials": "ユーザー名またはパスワードが正しくありません",
+      "needOtp": "二段階認証コードを入力してください",
+      "invalidOtp": "二段階認証コードが正しくありません",
+      "network": "サーバーに接続できませんでした",
+      "sessionExpired": "セッションの有効期限が切れました。再度ログインしてください",
+      "unknown": "ログインに失敗しました"
+    }
+  },
+  "upload": {
+    "title": "動画投稿",
+    "file": "動画ファイル",
+    "noFile": "ファイルが選択されていません",
+    "name": "タイトル",
+    "channel": "チャンネル",
+    "privacy": "公開範囲",
+    "privacyOptions": {
+      "public": "公開",
+      "unlisted": "限定公開",
+      "private": "非公開",
+      "internal": "内部限定"
+    },
+    "description": "説明",
+    "nsfw": "センシティブな内容 (NSFW)",
+    "start": "アップロード",
+    "cancel": "キャンセル",
+    "success": "アップロードが完了しました",
+    "errors": {
+      "noFile": "動画ファイルを選択してください",
+      "noChannel": "投稿先チャンネルを選択してください",
+      "canceled": "アップロードをキャンセルしました",
+      "failed": "アップロードに失敗しました"
+    }
   }
 }
