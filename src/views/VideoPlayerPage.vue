@@ -197,9 +197,16 @@ const saveCurrentProgress = async () => {
     return;
   }
 
+  const generation = progressTrackingGeneration;
+
   try {
-    const currentTime = await player.getCurrentPosition();
+    const currentTime = await player.getCurrentTime();
     const duration = await player.getDuration();
+
+    // 待機中に新しいトラッキングが始まっていたら、古い値で履歴を上書きしない
+    if (generation !== progressTrackingGeneration) {
+      return;
+    }
 
     if (currentTime > 0 && duration > 0) {
       historyStore.updateProgress(video.value.uuid, currentTime, duration);
@@ -238,7 +245,7 @@ const startProgressTracking = (activePlayer: PeerTubePlayer) => {
 
   progressInterval = window.setInterval(async () => {
     try {
-      const currentTime = await activePlayer.getCurrentPosition();
+      const currentTime = await activePlayer.getCurrentTime();
       const duration = await activePlayer.getDuration();
 
       // 待機中に停止された古いポーリングは何もしない
@@ -356,13 +363,27 @@ async function fetchVideo() {
           console.warn('Player ready timeout, continuing anyway:', timeoutError);
           // タイムアウトしても処理を続行
         }
-        
+
+        // 🆕 プレイヤー準備待ちの間に画面が破棄されていたら何もしない
+        if (isUnmounted) {
+          return;
+        }
+
         // 🆕 保存された位置から再開
         await resumeFromHistory(player, video.value.uuid);
-        
-        // 🆕 進行状況のトラッキング開始
-        startProgressTracking(player);
-        
+
+        // 🆕 セットアップ中に画面が破棄/離脱されていたらトラッキングは開始しない
+        // （背面ページや破棄済みページでポーリングが動き続けるのを防ぐ。
+        //   背面から戻った時はionViewDidEnterが再開する）
+        if (isUnmounted) {
+          return;
+        }
+
+        if (isViewActive) {
+          // 🆕 進行状況のトラッキング開始
+          startProgressTracking(player);
+        }
+
         if (pipSupported.value) {
           setupPiPListeners();
         }
