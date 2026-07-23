@@ -63,10 +63,12 @@
 </template>
 
 <script setup lang="ts">
-import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonBackButton, IonButton, IonIcon } from '@ionic/vue';
+import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonBackButton, IonButton, IonIcon, onIonViewDidEnter, onIonViewWillLeave } from '@ionic/vue';
 import { ref, onMounted, onBeforeUnmount, nextTick, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
+import { App } from '@capacitor/app';
+import type { PluginListenerHandle } from '@capacitor/core';
 import { useInstanceStore } from '@/stores/instanceStore';
 import { useHistoryStore } from '@/stores/historyStore'; // 🆕 履歴ストア追加
 import { usePlaylistStore } from '@/stores/playlistStore';
@@ -95,6 +97,9 @@ const loopRestartThresholdSeconds = 1;
 
 // 🆕 進行状況の定期保存用
 let progressInterval: number | null = null;
+
+// 🆕 アプリのフォアグラウンド/バックグラウンド遷移リスナー
+let appStateListener: PluginListenerHandle | null = null;
 
 const descHtml = ref<string>('');
 const errorMessage = ref<string>('');
@@ -166,8 +171,57 @@ const addToHistory = () => {
   });
 };
 
+// 🆕 進行状況トラッキングを停止
+const stopProgressTracking = () => {
+  if (progressInterval !== null) {
+    clearInterval(progressInterval);
+    progressInterval = null;
+  }
+};
+
+// 🆕 現在の再生位置を即座に履歴へ保存（バックグラウンド移行時・画面離脱時用）
+const saveCurrentProgress = async () => {
+  if (!player || !video.value) {
+    return;
+  }
+
+  try {
+    const currentTime = await player.getCurrentPosition();
+    const duration = await player.getDuration();
+
+    if (currentTime > 0 && duration > 0) {
+      historyStore.updateProgress(video.value.uuid, currentTime, duration);
+    }
+  } catch (e) {
+    // 離脱中はプレイヤーが応答しないことがあるため失敗は無視
+    console.debug('Saving progress failed:', e);
+  }
+};
+
+// 🆕 画面が背面に回ったら再生を停止し、再生位置を保存する
+const suspendPlayback = async () => {
+  stopProgressTracking();
+
+  if (player) {
+    // 音声を即座に止めるため停止要求を先に送る（応答は待たない）
+    void player.pause().catch((e) => {
+      console.debug('Pausing playback failed:', e);
+    });
+  }
+
+  await saveCurrentProgress();
+};
+
+// 🆕 画面へ戻ってきたら進行状況トラッキングを再開する（再生自体は自動再開しない）
+const resumeProgressTracking = () => {
+  if (player) {
+    startProgressTracking(player);
+  }
+};
+
 // 🆕 再生位置を定期的に保存
 const startProgressTracking = (activePlayer: PeerTubePlayer) => {
+  stopProgressTracking(); // 二重起動を防止
   progressInterval = window.setInterval(async () => {
     try {
       const currentTime = await activePlayer.getCurrentPosition();
@@ -314,22 +368,46 @@ async function fetchVideo() {
   }
 }
 
+// 🆕 解除できるように名前付きハンドラで登録する
+const handleEnterPiP = () => {
+  console.log('Entered PiP mode');
+};
+
+const handleLeavePiP = () => {
+  console.log('Left PiP mode');
+};
+
 const setupPiPListeners = () => {
   if (Capacitor.getPlatform() === 'web') {
-    document.addEventListener('enterpictureinpicture', () => {
-      console.log('Entered PiP mode');
-    });
-    
-    document.addEventListener('leavepictureinpicture', () => {
-      console.log('Left PiP mode');
-    });
+    document.addEventListener('enterpictureinpicture', handleEnterPiP);
+    document.addEventListener('leavepictureinpicture', handleLeavePiP);
   }
 };
+
+// 🆕 別画面へ遷移してもIonicはこのページをキャッシュしたまま残すため、
+// 背面に回るタイミングで再生を停止して位置を保存する
+onIonViewWillLeave(() => {
+  void suspendPlayback();
+});
+
+// 🆕 背面から画面へ戻ってきたら進行状況トラッキングを再開する
+onIonViewDidEnter(() => {
+  resumeProgressTracking();
+});
 
 onMounted(async () => {
   try {
     document.addEventListener('fullscreenchange', onFullScreenChange);
     document.addEventListener('webkitfullscreenchange', onFullScreenChange);
+
+    // 🆕 アプリ自体がバックグラウンドへ移行したら再生を停止し、復帰したらトラッキングを再開する
+    appStateListener = await App.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) {
+        resumeProgressTracking();
+      } else {
+        void suspendPlayback();
+      }
+    });
 
     if (Capacitor.getPlatform() !== 'web') {
       try {
@@ -346,19 +424,26 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(async () => {
-  // 🆕 進行状況トラッキング停止
-  if (progressInterval) {
-    clearInterval(progressInterval);
-  }
-  
+  // 🆕 進行状況トラッキングを停止し、最後の再生位置を保存（ベストエフォート）
+  stopProgressTracking();
+  void saveCurrentProgress();
+
   document.removeEventListener('fullscreenchange', onFullScreenChange);
   document.removeEventListener('webkitfullscreenchange', onFullScreenChange);
-  
+
   if (Capacitor.getPlatform() === 'web') {
-    document.removeEventListener('enterpictureinpicture', () => {});
-    document.removeEventListener('leavepictureinpicture', () => {});
+    document.removeEventListener('enterpictureinpicture', handleEnterPiP);
+    document.removeEventListener('leavepictureinpicture', handleLeavePiP);
   }
-  
+
+  // 🆕 アプリ状態リスナーを解除
+  if (appStateListener) {
+    void appStateListener.remove().catch(() => {
+      // リスナー解除失敗は無視
+    });
+    appStateListener = null;
+  }
+
   try {
     await ScreenOrientation.unlock();
   } catch {

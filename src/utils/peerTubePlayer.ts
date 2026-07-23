@@ -71,6 +71,10 @@ export class PeerTubePlayer {
     return this.sendMessage<number>('getDuration')
   }
 
+  pause(): Promise<void> {
+    return this.sendMessage<void>('pause')
+  }
+
   play(): Promise<void> {
     return this.sendMessage<void>('play')
   }

@@ -14,9 +14,21 @@ const peerTubeMocks = vi.hoisted(() => ({
   constructorError: undefined as Error | undefined,
   getCurrentPosition: vi.fn(),
   getDuration: vi.fn(),
+  pause: vi.fn(),
   play: vi.fn(),
   ready: Promise.resolve(),
   seek: vi.fn(),
+}))
+
+const appMocks = vi.hoisted(() => ({
+  addListener: vi.fn(),
+  removeListener: vi.fn(),
+  triggerAppStateChange: undefined as ((state: { isActive: boolean }) => void) | undefined,
+}))
+
+const ionicLifecycleMocks = vi.hoisted(() => ({
+  didEnter: [] as Array<() => void>,
+  willLeave: [] as Array<() => void>,
 }))
 
 const capacitorMocks = vi.hoisted(() => ({
@@ -52,11 +64,28 @@ vi.mock('@/utils/peerTubePlayer', () => ({
     return {
       getCurrentPosition: peerTubeMocks.getCurrentPosition,
       getDuration: peerTubeMocks.getDuration,
+      pause: peerTubeMocks.pause,
       play: peerTubeMocks.play,
       ready: peerTubeMocks.ready,
       seek: peerTubeMocks.seek,
     }
   }),
+}))
+
+vi.mock('@capacitor/app', () => ({
+  App: {
+    addListener: appMocks.addListener,
+  },
+}))
+
+vi.mock('@ionic/vue', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@ionic/vue')>()),
+  onIonViewDidEnter: (callback: () => void) => {
+    ionicLifecycleMocks.didEnter.push(callback)
+  },
+  onIonViewWillLeave: (callback: () => void) => {
+    ionicLifecycleMocks.willLeave.push(callback)
+  },
 }))
 
 vi.mock('marked', () => ({
@@ -163,10 +192,21 @@ describe('VideoPlayerPage', () => {
     capacitorMocks.unlock.mockResolvedValue(undefined)
     peerTubeMocks.ready = Promise.resolve()
     peerTubeMocks.constructorError = undefined
+    peerTubeMocks.pause.mockResolvedValue(undefined)
     peerTubeMocks.play.mockResolvedValue(undefined)
     peerTubeMocks.seek.mockResolvedValue(undefined)
     peerTubeMocks.getCurrentPosition.mockResolvedValue(45)
     peerTubeMocks.getDuration.mockResolvedValue(120)
+    ionicLifecycleMocks.didEnter.length = 0
+    ionicLifecycleMocks.willLeave.length = 0
+    appMocks.triggerAppStateChange = undefined
+    appMocks.addListener.mockImplementation(
+      (_eventName: string, callback: (state: { isActive: boolean }) => void) => {
+        appMocks.triggerAppStateChange = callback
+        return Promise.resolve({ remove: appMocks.removeListener })
+      },
+    )
+    appMocks.removeListener.mockResolvedValue(undefined)
     markedMocks.marked.mockImplementation((source: string) =>
       Promise.resolve(source.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')),
     )
@@ -504,6 +544,95 @@ describe('VideoPlayerPage', () => {
     wrapper.unmount()
     debug.mockRestore()
     warn.mockRestore()
+  })
+
+  it('pauses playback, saves the position, and stops tracking when the player screen goes to the background', async () => {
+    vi.useFakeTimers()
+
+    const { historyStore, wrapper } = await mountVideoPlayerPage()
+
+    peerTubeMocks.getCurrentPosition.mockResolvedValue(62)
+
+    ionicLifecycleMocks.willLeave.forEach((callback) => callback())
+    await flushPromises()
+
+    expect(peerTubeMocks.pause).toHaveBeenCalled()
+    expect(historyStore.getHistoryItem('video-1')).toMatchObject({
+      progress: 62,
+      duration: 120,
+    })
+
+    peerTubeMocks.getCurrentPosition.mockClear()
+    await vi.advanceTimersByTimeAsync(15000)
+    await flushPromises()
+
+    expect(peerTubeMocks.getCurrentPosition).not.toHaveBeenCalled()
+
+    ionicLifecycleMocks.didEnter.forEach((callback) => callback())
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+
+    expect(peerTubeMocks.getCurrentPosition).toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('pauses playback and saves the position when the app goes to the background, then resumes tracking', async () => {
+    vi.useFakeTimers()
+
+    const { historyStore, wrapper } = await mountVideoPlayerPage()
+
+    expect(appMocks.addListener).toHaveBeenCalledWith('appStateChange', expect.any(Function))
+
+    peerTubeMocks.getCurrentPosition.mockResolvedValue(78)
+
+    appMocks.triggerAppStateChange?.({ isActive: false })
+    await flushPromises()
+
+    expect(peerTubeMocks.pause).toHaveBeenCalled()
+    expect(historyStore.getHistoryItem('video-1')).toMatchObject({
+      progress: 78,
+      duration: 120,
+    })
+
+    peerTubeMocks.getCurrentPosition.mockClear()
+    await vi.advanceTimersByTimeAsync(15000)
+    await flushPromises()
+
+    expect(peerTubeMocks.getCurrentPosition).not.toHaveBeenCalled()
+
+    appMocks.triggerAppStateChange?.({ isActive: true })
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+
+    expect(peerTubeMocks.getCurrentPosition).toHaveBeenCalled()
+
+    wrapper.unmount()
+    expect(appMocks.removeListener).toHaveBeenCalled()
+  })
+
+  it('ignores pause and position failures while suspending playback in the background', async () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    peerTubeMocks.pause.mockRejectedValueOnce(new Error('pause unavailable'))
+    peerTubeMocks.getCurrentPosition.mockRejectedValueOnce(new Error('position unavailable'))
+
+    const { historyStore, wrapper } = await mountVideoPlayerPage()
+
+    ionicLifecycleMocks.willLeave.forEach((callback) => callback())
+    await flushPromises()
+
+    expect(debug).toHaveBeenCalledWith(
+      'Pausing playback failed:',
+      expect.objectContaining({ message: 'pause unavailable' }),
+    )
+    expect(debug).toHaveBeenCalledWith(
+      'Saving progress failed:',
+      expect.objectContaining({ message: 'position unavailable' }),
+    )
+    expect(historyStore.getHistoryItem('video-1')?.progress).toBeUndefined()
+
+    wrapper.unmount()
+    debug.mockRestore()
   })
 
   it('logs player initialization failures without adding history', async () => {

@@ -88,12 +88,17 @@ describe('PeerTubePlayer', () => {
     calls[4]?.success(undefined)
     await expect(play).resolves.toBeUndefined()
 
+    const pause = player.pause()
+    calls[5]?.success(undefined)
+    await expect(pause).resolves.toBeUndefined()
+
     expect(calls.map((call) => call.method)).toEqual([
       'isReady',
       'getCurrentPosition',
       'getDuration',
       'seek',
       'play',
+      'pause',
     ])
     expect(calls[3]).toMatchObject({ params: 30 })
   })
