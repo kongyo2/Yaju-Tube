@@ -101,6 +101,15 @@ let progressInterval: number | null = null;
 // 🆕 アプリのフォアグラウンド/バックグラウンド遷移リスナー
 let appStateListener: PluginListenerHandle | null = null;
 
+// 🆕 このビューが前面に表示されているか（Ionicのキャッシュで背面に残っている間はfalse）
+let isViewActive = true;
+
+// 🆕 アンマウント後に完了する非同期処理を無効化するためのフラグ
+let isUnmounted = false;
+
+// 🆕 停止後に完了した実行中ポーリングを無効化するための世代カウンタ
+let progressTrackingGeneration = 0;
+
 const descHtml = ref<string>('');
 const errorMessage = ref<string>('');
 const tempInstanceUrl = sessionStorage.getItem('tempInstanceUrl');
@@ -173,6 +182,9 @@ const addToHistory = () => {
 
 // 🆕 進行状況トラッキングを停止
 const stopProgressTracking = () => {
+  // 実行中の古いポーリングコールバックも世代カウンタで無効化する
+  progressTrackingGeneration += 1;
+
   if (progressInterval !== null) {
     clearInterval(progressInterval);
     progressInterval = null;
@@ -222,14 +234,27 @@ const resumeProgressTracking = () => {
 // 🆕 再生位置を定期的に保存
 const startProgressTracking = (activePlayer: PeerTubePlayer) => {
   stopProgressTracking(); // 二重起動を防止
+  const generation = progressTrackingGeneration;
+
   progressInterval = window.setInterval(async () => {
     try {
       const currentTime = await activePlayer.getCurrentPosition();
       const duration = await activePlayer.getDuration();
-      
+
+      // 待機中に停止された古いポーリングは何もしない
+      // （suspend後にループ再生分岐でseek/playが走るのを防ぐ）
+      if (generation !== progressTrackingGeneration) {
+        return;
+      }
+
       if (video.value && currentTime > 0 && duration > 0) {
         if (loopPlayback.value && currentTime >= duration - loopRestartThresholdSeconds) {
           await activePlayer.seek(0);
+
+          if (generation !== progressTrackingGeneration) {
+            return;
+          }
+
           await activePlayer.play();
           historyStore.updateProgress(video.value.uuid, 0, duration);
           return;
@@ -387,11 +412,13 @@ const setupPiPListeners = () => {
 // 🆕 別画面へ遷移してもIonicはこのページをキャッシュしたまま残すため、
 // 背面に回るタイミングで再生を停止して位置を保存する
 onIonViewWillLeave(() => {
+  isViewActive = false;
   void suspendPlayback();
 });
 
 // 🆕 背面から画面へ戻ってきたら進行状況トラッキングを再開する
 onIonViewDidEnter(() => {
+  isViewActive = true;
   resumeProgressTracking();
 });
 
@@ -403,11 +430,24 @@ onMounted(async () => {
     // 🆕 アプリ自体がバックグラウンドへ移行したら再生を停止し、復帰したらトラッキングを再開する
     appStateListener = await App.addListener('appStateChange', ({ isActive }) => {
       if (isActive) {
-        resumeProgressTracking();
+        // このページが前面にいる時だけ再開する
+        // （背面キャッシュ中のページで隠れ再生・トラッキングが始まるのを防ぐ）
+        if (isViewActive) {
+          resumeProgressTracking();
+        }
       } else {
         void suspendPlayback();
       }
     });
+
+    // 🆕 リスナー登録完了より先にアンマウントされていたら、即座に解除して以降の処理は行わない
+    if (isUnmounted) {
+      void appStateListener.remove().catch(() => {
+        // リスナー解除失敗は無視
+      });
+      appStateListener = null;
+      return;
+    }
 
     if (Capacitor.getPlatform() !== 'web') {
       try {
@@ -424,6 +464,9 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(async () => {
+  // 🆕 進行中の非同期セットアップ（リスナー登録など）を無効化
+  isUnmounted = true;
+
   // 🆕 進行状況トラッキングを停止し、最後の再生位置を保存（ベストエフォート）
   stopProgressTracking();
   void saveCurrentProgress();

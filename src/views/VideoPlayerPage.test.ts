@@ -611,6 +611,82 @@ describe('VideoPlayerPage', () => {
     expect(appMocks.removeListener).toHaveBeenCalled()
   })
 
+  it('does not resume tracking on app foreground while the page itself stays in the background', async () => {
+    vi.useFakeTimers()
+
+    const { wrapper } = await mountVideoPlayerPage()
+
+    ionicLifecycleMocks.willLeave.forEach((callback) => callback())
+    await flushPromises()
+
+    peerTubeMocks.getCurrentPosition.mockClear()
+    appMocks.triggerAppStateChange?.({ isActive: true })
+    await vi.advanceTimersByTimeAsync(15000)
+    await flushPromises()
+
+    expect(peerTubeMocks.getCurrentPosition).not.toHaveBeenCalled()
+
+    ionicLifecycleMocks.didEnter.forEach((callback) => callback())
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+
+    expect(peerTubeMocks.getCurrentPosition).toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('removes the app state listener when registration resolves after unmount', async () => {
+    let resolveListener: (handle: { remove: () => Promise<void> }) => void = () => {}
+    appMocks.addListener.mockImplementation(
+      () => new Promise<{ remove: () => Promise<void> }>((resolve) => {
+        resolveListener = resolve
+      }),
+    )
+
+    const { wrapper } = await mountVideoPlayerPage()
+    wrapper.unmount()
+
+    expect(appMocks.removeListener).not.toHaveBeenCalled()
+
+    resolveListener({ remove: appMocks.removeListener })
+    await flushPromises()
+
+    expect(appMocks.removeListener).toHaveBeenCalled()
+  })
+
+  it('ignores an in-flight progress poll that completes after playback was suspended', async () => {
+    vi.useFakeTimers()
+    peerTubeMocks.getDuration.mockResolvedValue(120)
+
+    const { wrapper } = await mountVideoPlayerPage()
+
+    await wrapper.get('[aria-label="ループ再生を有効にする"]').trigger('click')
+    await flushPromises()
+
+    let resolveInFlightPosition: (value: number) => void = () => {}
+    peerTubeMocks.getCurrentPosition.mockImplementationOnce(
+      () => new Promise<number>((resolve) => {
+        resolveInFlightPosition = resolve
+      }),
+    )
+    peerTubeMocks.getCurrentPosition.mockResolvedValue(119.5)
+
+    await vi.advanceTimersByTimeAsync(5000)
+
+    ionicLifecycleMocks.willLeave.forEach((callback) => callback())
+    await flushPromises()
+
+    expect(peerTubeMocks.pause).toHaveBeenCalled()
+
+    resolveInFlightPosition(119.5)
+    await flushPromises()
+
+    expect(peerTubeMocks.seek).not.toHaveBeenCalledWith(0)
+    expect(peerTubeMocks.play).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
   it('ignores pause and position failures while suspending playback in the background', async () => {
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
     peerTubeMocks.pause.mockRejectedValueOnce(new Error('pause unavailable'))
