@@ -104,6 +104,9 @@ let appStateListener: PluginListenerHandle | null = null;
 // 🆕 このビューが前面に表示されているか（Ionicのキャッシュで背面に残っている間はfalse）
 let isViewActive = true;
 
+// 🆕 アプリ自体がフォアグラウンドにあるか
+let isAppActive = true;
+
 // 🆕 アンマウント後に完了する非同期処理を無効化するためのフラグ
 let isUnmounted = false;
 
@@ -232,8 +235,9 @@ const suspendPlayback = async () => {
 };
 
 // 🆕 画面へ戻ってきたら進行状況トラッキングを再開する（再生自体は自動再開しない）
+// このページが前面にあり、かつアプリがフォアグラウンドの時だけ開始する
 const resumeProgressTracking = () => {
-  if (player) {
+  if (player && isViewActive && isAppActive) {
     startProgressTracking(player);
   }
 };
@@ -372,17 +376,15 @@ async function fetchVideo() {
         // 🆕 保存された位置から再開
         await resumeFromHistory(player, video.value.uuid);
 
-        // 🆕 セットアップ中に画面が破棄/離脱されていたらトラッキングは開始しない
-        // （背面ページや破棄済みページでポーリングが動き続けるのを防ぐ。
-        //   背面から戻った時はionViewDidEnterが再開する）
+        // 🆕 セットアップ中に画面が破棄されていたらトラッキングは開始しない
         if (isUnmounted) {
           return;
         }
 
-        if (isViewActive) {
-          // 🆕 進行状況のトラッキング開始
-          startProgressTracking(player);
-        }
+        // 🆕 進行状況のトラッキング開始
+        // （ページが背面・アプリがバックグラウンドの間は開始せず、
+        //   ionViewDidEnterやappStateChangeの復帰時に再開される）
+        resumeProgressTracking();
 
         if (pipSupported.value) {
           setupPiPListeners();
@@ -450,13 +452,15 @@ onMounted(async () => {
 
     // 🆕 アプリ自体がバックグラウンドへ移行したら再生を停止し、復帰したらトラッキングを再開する
     appStateListener = await App.addListener('appStateChange', ({ isActive }) => {
+      isAppActive = isActive;
+
       if (isActive) {
-        // このページが前面にいる時だけ再開する
-        // （背面キャッシュ中のページで隠れ再生・トラッキングが始まるのを防ぐ）
-        if (isViewActive) {
-          resumeProgressTracking();
-        }
-      } else {
+        // 背面キャッシュ中のページで隠れ再生・トラッキングが始まらないよう
+        // resumeProgressTracking側で前面判定してから再開する
+        resumeProgressTracking();
+      } else if (isViewActive) {
+        // 背面キャッシュ中のページは離脱時に既に停止・保存済みのため対象外
+        // （watchedAtが更新され、見ていない動画が履歴の先頭に浮上するのを防ぐ）
         void suspendPlayback();
       }
     });

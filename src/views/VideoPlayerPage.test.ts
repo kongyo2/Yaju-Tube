@@ -737,6 +737,58 @@ describe('VideoPlayerPage', () => {
     warn.mockRestore()
   })
 
+  it('does not start tracking when the app went to the background during player setup', async () => {
+    vi.useFakeTimers()
+    peerTubeMocks.ready = new Promise(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const { wrapper } = await mountVideoPlayerPage()
+
+    appMocks.triggerAppStateChange?.({ isActive: false })
+    await flushPromises()
+
+    // player.readyのタイムアウト経過でセットアップの続きが実行される
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    peerTubeMocks.getCurrentTime.mockClear()
+
+    await vi.advanceTimersByTimeAsync(15000)
+    await flushPromises()
+
+    expect(peerTubeMocks.getCurrentTime).not.toHaveBeenCalled()
+
+    appMocks.triggerAppStateChange?.({ isActive: true })
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+
+    expect(peerTubeMocks.getCurrentTime).toHaveBeenCalled()
+
+    wrapper.unmount()
+    warn.mockRestore()
+  })
+
+  it('does not re-suspend cached background pages when the app goes to the background', async () => {
+    const { historyStore, wrapper } = await mountVideoPlayerPage()
+
+    ionicLifecycleMocks.willLeave.forEach((callback) => callback())
+    await flushPromises()
+
+    const watchedAtAfterLeave = historyStore.getHistoryItem('video-1')?.watchedAt
+    peerTubeMocks.pause.mockClear()
+    peerTubeMocks.getCurrentTime.mockClear()
+
+    appMocks.triggerAppStateChange?.({ isActive: false })
+    await flushPromises()
+
+    // 離脱時に停止・保存済みの背面ページには何もしない
+    // （watchedAtが更新されて履歴の先頭に浮上するのを防ぐ）
+    expect(peerTubeMocks.pause).not.toHaveBeenCalled()
+    expect(peerTubeMocks.getCurrentTime).not.toHaveBeenCalled()
+    expect(historyStore.getHistoryItem('video-1')?.watchedAt).toBe(watchedAtAfterLeave)
+
+    wrapper.unmount()
+  })
+
   it('does not let a stale background save overwrite progress from resumed tracking', async () => {
     vi.useFakeTimers()
 
