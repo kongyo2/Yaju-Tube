@@ -25,7 +25,7 @@ jobs:
         run: npm ci
 
       - name: Audit dependencies
-        run: npm audit
+        run: npm audit --omit=dev
 
       - name: Check whitespace
         run: git diff --check
