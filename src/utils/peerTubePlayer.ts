@@ -12,6 +12,9 @@ export interface PeerTubeChannelCall {
 export interface PeerTubeChannel {
   bind(method: string, handler: (transaction: unknown, params?: unknown) => void): void
   call(options: PeerTubeChannelCall): void
+  // jschannelはチャンネルをグローバルなテーブルへ登録し、windowのmessage
+  // リスナーも張る。destroy()を呼ばない限りどちらも残り続ける
+  destroy(): void
 }
 
 export interface PeerTubeChannelFactory {
@@ -74,7 +77,17 @@ export class PeerTubePlayer {
     return this.readyPromise
   }
 
+  // iframeを外すだけではjschannelの登録は解けない。destroy()を呼ばないと
+  // グローバルテーブルの項目とwindowのmessageリスナーが動画ページを開くたびに
+  // 積み上がるため、チャンネルも明示的に破棄する
   destroy(): void {
+    try {
+      this.channel.destroy()
+    } catch (e) {
+      // 破棄済みチャンネルの二重破棄などは無視してiframe除去まで進める
+      console.debug('Destroying the PeerTube channel failed:', e)
+    }
+
     this.embedElement.remove()
   }
 

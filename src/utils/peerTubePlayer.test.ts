@@ -16,6 +16,7 @@ function createChannel() {
     call: vi.fn((options) => {
       calls.push(options)
     }),
+    destroy: vi.fn(),
   }
 
   return { calls, channel, handlers }

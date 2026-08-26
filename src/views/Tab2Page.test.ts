@@ -315,6 +315,121 @@ describe('Tab2Page', () => {
     expect(wrapper.text()).toContain(i18n.global.t('menu.getVideo'))
   })
 
+  it('ignores a slow earlier response that resolves after a newer search', async () => {
+    const { wrapper } = await mountTab2Page()
+
+    const staleVideo: Video = { ...sampleVideo, uuid: 'stale-video', name: 'Stale First Page' }
+    const freshVideo: Video = { ...sampleVideo, uuid: 'fresh-video', name: 'Fresh Search Result' }
+
+    let resolveStale: (value: AxiosResponse<VideoListResponse>) => void = () => {}
+    const stalePending = new Promise<AxiosResponse<VideoListResponse>>((resolve) => {
+      resolveStale = resolve
+    })
+
+    vi.mocked(API.get).mockClear()
+    vi.mocked(API.get).mockReturnValueOnce(stalePending as never)
+
+    const searchbar = wrapper.getComponent({ name: 'IonSearchbar' })
+    searchbar.vm.$emit('update:modelValue', 'pee')
+    await wrapper.vm.$nextTick()
+    searchbar.vm.$emit('ionInput')
+    await wrapper.vm.$nextTick()
+
+    // A second keystroke starts a newer request that answers first.
+    mockVideoList([freshVideo], 1)
+    searchbar.vm.$emit('update:modelValue', 'peertube')
+    await wrapper.vm.$nextTick()
+    searchbar.vm.$emit('ionInput')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Fresh Search Result')
+
+    // The first request finally answers; it must not replace the newer results.
+    resolveStale({
+      data: { data: [staleVideo], total: 99 } satisfies VideoListResponse,
+    } as AxiosResponse<VideoListResponse>)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Fresh Search Result')
+    expect(wrapper.text()).not.toContain('Stale First Page')
+  })
+
+  it('ignores a failure from an earlier request after a newer one succeeded', async () => {
+    const { wrapper } = await mountTab2Page()
+
+    const freshVideo: Video = { ...sampleVideo, uuid: 'fresh-video', name: 'Fresh Search Result' }
+
+    let rejectStale: (reason: unknown) => void = () => {}
+    const stalePending = new Promise<AxiosResponse<VideoListResponse>>((_resolve, reject) => {
+      rejectStale = reject
+    })
+
+    vi.mocked(API.get).mockClear()
+    vi.mocked(API.get).mockReturnValueOnce(stalePending as never)
+
+    const searchbar = wrapper.getComponent({ name: 'IonSearchbar' })
+    searchbar.vm.$emit('update:modelValue', 'pee')
+    await wrapper.vm.$nextTick()
+    searchbar.vm.$emit('ionInput')
+    await wrapper.vm.$nextTick()
+
+    mockVideoList([freshVideo], 1)
+    searchbar.vm.$emit('update:modelValue', 'peertube')
+    await wrapper.vm.$nextTick()
+    searchbar.vm.$emit('ionInput')
+    await flushPromises()
+
+    rejectStale(axiosError({ request: {} }))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Fresh Search Result')
+    expect(wrapper.text()).not.toContain(i18n.global.t('errors.networkError'))
+  })
+
+  it('ignores a response for the instance the user already switched away from', async () => {
+    const { instanceStore, wrapper } = await mountTab2Page()
+
+    const oldInstanceVideo: Video = {
+      ...sampleVideo,
+      uuid: 'old-instance-video',
+      name: 'Old Instance Video',
+    }
+    const newInstanceVideo: Video = {
+      ...sampleVideo,
+      uuid: 'new-instance-video',
+      name: 'New Instance Video',
+    }
+
+    let resolveOld: (value: AxiosResponse<VideoListResponse>) => void = () => {}
+    const oldPending = new Promise<AxiosResponse<VideoListResponse>>((resolve) => {
+      resolveOld = resolve
+    })
+
+    vi.mocked(API.get).mockClear()
+    vi.mocked(API.get).mockReturnValueOnce(oldPending as never)
+
+    const searchbar = wrapper.getComponent({ name: 'IonSearchbar' })
+    searchbar.vm.$emit('update:modelValue', 'anything')
+    await wrapper.vm.$nextTick()
+    searchbar.vm.$emit('ionInput')
+    await wrapper.vm.$nextTick()
+
+    mockVideoList([newInstanceVideo], 1)
+    instanceStore.selectedInstanceUrl = 'other.example'
+    await flushPromises()
+
+    resolveOld({
+      data: { data: [oldInstanceVideo], total: 1 } satisfies VideoListResponse,
+    } as AxiosResponse<VideoListResponse>)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('New Instance Video')
+    expect(wrapper.text()).not.toContain('Old Instance Video')
+    expect(wrapper.get('img').attributes('src')).toBe(
+      'https://other.example/lazy-static/thumbnails/video-1.jpg',
+    )
+  })
+
   it.each([
     ['timeout', axiosError({ code: 'ECONNABORTED' }), i18n.global.t('errors.timeout')],
     [

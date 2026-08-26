@@ -12,6 +12,7 @@ import VideoPlayerPage from './VideoPlayerPage.vue'
 const peerTubeMocks = vi.hoisted(() => ({
   constructor: vi.fn(),
   constructorError: undefined as Error | undefined,
+  destroy: vi.fn(),
   getCurrentTime: vi.fn(),
   getDuration: vi.fn(),
   pause: vi.fn(),
@@ -62,6 +63,7 @@ vi.mock('@/utils/peerTubePlayer', () => ({
     peerTubeMocks.constructor(iframe)
 
     return {
+      destroy: peerTubeMocks.destroy,
       getCurrentTime: peerTubeMocks.getCurrentTime,
       getDuration: peerTubeMocks.getDuration,
       pause: peerTubeMocks.pause,
@@ -1013,6 +1015,106 @@ describe('VideoPlayerPage', () => {
     expect(historyStore.history).toEqual([])
 
     error.mockRestore()
+  })
+
+  it('saves a rewind to the very beginning of the video', async () => {
+    // 回帰テスト: 先頭まで巻き戻して画面を離れると、その位置(0秒)が保存されず
+    // 次回また途中から再生されてしまっていた。
+    vi.useFakeTimers()
+
+    const { historyStore, wrapper } = await mountVideoPlayerPage(({ historyStore: store }) => {
+      store.addToHistory({
+        videoId: 'video-1',
+        videoName: 'PeerTube Test Video',
+        thumbnailPath: '/lazy-static/thumbnails/video-1.jpg',
+        channelName: 'Test Channel',
+        instanceUrl: '810video.com',
+      })
+      store.updateProgress('video-1', 60, 120)
+    })
+
+    // 再生位置が通知された後で、利用者がシークバーを先頭まで戻す
+    peerTubeMocks.getCurrentTime.mockResolvedValue(75)
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(historyStore.getHistoryItem('video-1')).toMatchObject({ progress: 75 })
+
+    peerTubeMocks.getCurrentTime.mockResolvedValue(0)
+    ionicLifecycleMocks.willLeave.forEach((callback) => callback())
+    await flushPromises()
+
+    expect(historyStore.getHistoryItem('video-1')).toMatchObject({
+      progress: 0,
+      duration: 120,
+    })
+
+    wrapper.unmount()
+  })
+
+  it('keeps the stored resume point when the embed still reports position 0 before seeking', async () => {
+    // 埋め込みは start パラメータを適用し終えるまで position: 0 を通知するため、
+    // その0で保存済みの再生位置を消してはいけない。
+    vi.useFakeTimers()
+
+    peerTubeMocks.getCurrentTime.mockResolvedValue(0)
+
+    const { historyStore, wrapper } = await mountVideoPlayerPage(({ historyStore: store }) => {
+      store.addToHistory({
+        videoId: 'video-1',
+        videoName: 'PeerTube Test Video',
+        thumbnailPath: '/lazy-static/thumbnails/video-1.jpg',
+        channelName: 'Test Channel',
+        instanceUrl: '810video.com',
+      })
+      store.updateProgress('video-1', 60, 120)
+    })
+
+    await vi.advanceTimersByTimeAsync(5000)
+    ionicLifecycleMocks.willLeave.forEach((callback) => callback())
+    await flushPromises()
+
+    expect(historyStore.getHistoryItem('video-1')).toMatchObject({ progress: 60 })
+
+    wrapper.unmount()
+  })
+
+  it('releases the embed channel when the page is torn down', async () => {
+    // 回帰テスト: destroy() を呼ばないと jschannel のグローバル登録と
+    // window の message リスナーが動画ページを開くたびに積み上がる。
+    const { wrapper } = await mountVideoPlayerPage()
+
+    expect(peerTubeMocks.destroy).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+    await flushPromises()
+
+    expect(peerTubeMocks.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('hides the page header while the player is in full screen', async () => {
+    const { wrapper } = await mountVideoPlayerPage()
+
+    expect(wrapper.find('header').exists()).toBe(true)
+
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      value: document.createElement('div'),
+    })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+
+    expect(wrapper.find('header').exists()).toBe(false)
+
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      value: null,
+    })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+
+    expect(wrapper.find('header').exists()).toBe(true)
+
+    wrapper.unmount()
   })
 
   it('renders an unexpected error when lifecycle setup fails and ignores unlock failures', async () => {

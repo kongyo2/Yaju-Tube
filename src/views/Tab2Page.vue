@@ -256,7 +256,21 @@ const onImageError = (event: Event) => {
 const getThumbnailUrl = (path: string) =>
   `https://${instanceStore.selectedInstanceUrl}${path}`;
 
+// 🆕 直近に発行したリクエストの通し番号。
+// loadVideos は検索欄の入力（ionInputでキー入力ごと）・ソート・フィルタ・ページ
+// 送り・インスタンス切替・表示件数変更から並行して呼ばれるため、複数の要求が同時に
+// 飛ぶ。応答の到着順はネットワーク次第なので、遅れて届いた古い応答が新しい結果を
+// 上書きし、検索語と一覧の中身がずれたり、切り替え前のインスタンスの動画が
+// 新しいインスタンスのURLでサムネイル表示・再生されたりしていた。
+// 最新のリクエストの応答だけを反映することで防ぐ。
+let latestRequestId = 0;
+
 async function loadVideos(page: number, query = '', sort = selectedSort.value, filter = filterMode.value) {
+  latestRequestId += 1;
+  const requestId = latestRequestId;
+  // 応答が最新の要求のものでなければ、成功・失敗のいずれも画面へ反映しない
+  const isStale = () => requestId !== latestRequestId;
+
   try {
     const start = (page - 1) * count.value;
     const params: any = { sort, start, count: count.value };
@@ -267,16 +281,20 @@ async function loadVideos(page: number, query = '', sort = selectedSort.value, f
       `https://${instanceStore.selectedInstanceUrl}/api/v1/videos`,
       { params, timeout: 10000 }
     );
-    
+
+    if (isStale()) return;
+
     videos.value = res.data.data || [];
     totalPages.value = Math.ceil((res.data.total || 0) / count.value);
     currentPage.value = inputPage.value = page;
     errorMessage.value = '';
   } catch (e: any) {
+    if (isStale()) return;
+
     videos.value = [];
     totalPages.value = 1;
     currentPage.value = inputPage.value = 1;
-    
+
     if (axios.isAxiosError(e)) {
       if (e.code === 'ECONNABORTED') {
         errorMessage.value = t('errors.timeout');
