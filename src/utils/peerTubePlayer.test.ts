@@ -158,6 +158,29 @@ describe('PeerTubePlayer', () => {
     await Promise.all(commands.slice(1).map((c) => expect(c).rejects.toThrow('timed out')))
   })
 
+  it('rejects a command the embed never answers, through the real jschannel timeout', async () => {
+    // 回帰テスト: 応答が一切返らない埋め込みを実物のjschannelで再現する。
+    // 期限が無いとこのPromiseは永久に未解決のままとなり、画面破棄時の
+    // 後始末がそこで止まってプレイヤーが破棄されなくなる。
+    vi.useFakeTimers()
+
+    // postMessageを受け取るだけで何も返さない、応答しないiframe
+    const silentWindow = { postMessage: vi.fn() } as unknown as Window
+    const player = new PeerTubePlayer(
+      { contentWindow: silentWindow, remove: vi.fn() } as unknown as HTMLIFrameElement,
+      { scope: 'never-answers' },
+    )
+
+    const pending = player.getCurrentTime()
+    const rejection = expect(pending).rejects.toThrow(/timeout \(5000ms\) exceeded/)
+
+    await vi.advanceTimersByTimeAsync(5000)
+    await rejection
+
+    player.destroy()
+    vi.useRealTimers()
+  })
+
   it('rejects failed player commands and requires an iframe content window', async () => {
     const { calls, channel } = createChannel()
     const player = new PeerTubePlayer(
