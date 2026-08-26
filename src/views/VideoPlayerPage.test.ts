@@ -1091,6 +1091,21 @@ describe('VideoPlayerPage', () => {
     expect(peerTubeMocks.destroy).toHaveBeenCalledOnce()
   })
 
+  it('still releases the embed channel when the final position read fails', async () => {
+    // 回帰テスト: 応答しない埋め込みでは位置取得が期限切れでrejectする。
+    // 後始末がそれに引きずられてプレイヤーの破棄を取りこぼしてはいけない。
+    const { wrapper } = await mountVideoPlayerPage()
+
+    peerTubeMocks.getCurrentTime.mockRejectedValue(
+      new Error("timeout (5000ms) exceeded on method 'getCurrentTime'"),
+    )
+
+    wrapper.unmount()
+    await flushPromises()
+
+    expect(peerTubeMocks.destroy).toHaveBeenCalledOnce()
+  })
+
   it('hides the page header while the player is in full screen', async () => {
     const { wrapper } = await mountVideoPlayerPage()
 
