@@ -129,6 +129,13 @@ let isUnmounted = false;
 // 🆕 停止後に完了した実行中ポーリングを無効化するための世代カウンタ
 let progressTrackingGeneration = 0;
 
+// 🆕 埋め込みプレイヤーが一度でも0より後ろの再生位置を通知したか。
+// 埋め込みは start パラメータを適用し終える（canplaythrough）まで position: 0 を
+// 通知し続けるため、「まだ頭出し前の0」と「利用者が先頭まで巻き戻した0」を
+// 区別する必要がある。前者を保存すると保存済みの再生位置が消え、後者を捨てると
+// 巻き戻しが記録されず、次回また途中から再生されてしまう。
+let hasObservedPlaybackPosition = false;
+
 const descHtml = ref<string>('');
 const errorMessage = ref<string>('');
 const tempInstanceUrl = sessionStorage.getItem('tempInstanceUrl');
@@ -227,6 +234,33 @@ const stopProgressTracking = () => {
   }
 };
 
+// 🆕 履歴へ保存できる再生位置を読み取る。保存に使えない場合はnullを返す。
+// 再生位置が0でも、既にプレイヤーが再生位置を報告したことがあるなら
+// 「先頭まで巻き戻した」結果なので保存対象とする。
+const readPlaybackPosition = async (
+  activePlayer: PeerTubePlayer
+): Promise<{ currentTime: number; duration: number } | null> => {
+  const currentTime = await activePlayer.getCurrentTime();
+  const duration = await activePlayer.getDuration();
+
+  if (!Number.isFinite(currentTime) || !Number.isFinite(duration)) {
+    return null;
+  }
+
+  if (duration <= 0 || currentTime < 0) {
+    return null;
+  }
+
+  if (currentTime > 0) {
+    hasObservedPlaybackPosition = true;
+  } else if (!hasObservedPlaybackPosition) {
+    // 頭出し前に通知される0。保存済みの再生位置を消さないよう無視する
+    return null;
+  }
+
+  return { currentTime, duration };
+};
+
 // 🆕 現在の再生位置を即座に履歴へ保存（バックグラウンド移行時・画面離脱時用）
 const saveCurrentProgress = async () => {
   if (!player || !video.value) {
@@ -236,16 +270,15 @@ const saveCurrentProgress = async () => {
   const generation = progressTrackingGeneration;
 
   try {
-    const currentTime = await player.getCurrentTime();
-    const duration = await player.getDuration();
+    const reading = await readPlaybackPosition(player);
 
     // 待機中に新しいトラッキングが始まっていたら、古い値で履歴を上書きしない
     if (generation !== progressTrackingGeneration) {
       return;
     }
 
-    if (currentTime > 0 && duration > 0) {
-      historyStore.updateProgress(video.value.uuid, currentTime, duration);
+    if (video.value && reading) {
+      historyStore.updateProgress(video.value.uuid, reading.currentTime, reading.duration);
     }
   } catch (e) {
     // 離脱中はプレイヤーが応答しないことがあるため失敗は無視
@@ -282,8 +315,7 @@ const startProgressTracking = (activePlayer: PeerTubePlayer) => {
 
   progressInterval = window.setInterval(async () => {
     try {
-      const currentTime = await activePlayer.getCurrentTime();
-      const duration = await activePlayer.getDuration();
+      const reading = await readPlaybackPosition(activePlayer);
 
       // 待機中に停止された古いポーリングは何もしない
       // （suspend後にループ再生分岐でseek/playが走るのを防ぐ）
@@ -291,7 +323,9 @@ const startProgressTracking = (activePlayer: PeerTubePlayer) => {
         return;
       }
 
-      if (video.value && currentTime > 0 && duration > 0) {
+      if (video.value && reading) {
+        const { currentTime, duration } = reading;
+
         if (loopPlayback.value && currentTime >= duration - loopRestartThresholdSeconds) {
           await activePlayer.seek(0);
 
@@ -377,6 +411,10 @@ const resumeFromHistory = async (activePlayer: PeerTubePlayer) => {
 const onFullScreenChange = async () => {
   const fs = document.fullscreenElement || (document as any).webkitFullscreenElement;
   const isFS = !!fs;
+
+  // 🆕 テンプレートは isFullScreen を見てヘッダーを隠すが、この値が
+  // 更新されていなかったため全画面表示でもヘッダーが残り続けていた
+  isFullScreen.value = isFS;
 
   if (Capacitor.getPlatform() !== 'web') {
     try {
@@ -599,7 +637,21 @@ onBeforeUnmount(async () => {
 
   // 🆕 進行状況トラッキングを停止し、最後の再生位置を保存（ベストエフォート）
   stopProgressTracking();
-  void saveCurrentProgress();
+
+  // 🆕 保存し終えてからプレイヤーを破棄する。
+  // iframeはVueが取り除くが、jschannelのグローバル登録とwindowのmessage
+  // リスナーはdestroy()を呼ばない限り残るため、動画ページを開くたびに
+  // 積み上がってしまう。
+  const closingPlayer = player;
+  void saveCurrentProgress().finally(() => {
+    if (closingPlayer) {
+      closingPlayer.destroy();
+    }
+
+    if (player === closingPlayer) {
+      player = null;
+    }
+  });
 
   document.removeEventListener('fullscreenchange', onFullScreenChange);
   document.removeEventListener('webkitfullscreenchange', onFullScreenChange);
