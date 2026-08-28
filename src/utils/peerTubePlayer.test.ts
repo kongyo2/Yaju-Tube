@@ -6,8 +6,9 @@ function createChannel() {
   const calls: Array<{
     method: string
     params?: unknown
+    timeout?: number
     success(result: unknown): void
-    error(error: unknown): void
+    error(error: unknown, message?: unknown): void
   }> = []
   const channel: PeerTubeChannel = {
     bind: vi.fn((method, handler) => {
@@ -16,6 +17,7 @@ function createChannel() {
     call: vi.fn((options) => {
       calls.push(options)
     }),
+    destroy: vi.fn(),
   }
 
   return { calls, channel, handlers }
@@ -132,6 +134,51 @@ describe('PeerTubePlayer', () => {
     handlers.get('playbackStatusUpdate')?.({}, { position: 'invalid', duration: 'invalid' })
     await expect(player.getCurrentTime()).resolves.toBe(0)
     await expect(player.getDuration()).resolves.toBe(0)
+  })
+
+  it('bounds every player command so an unresponsive embed cannot hang the caller', async () => {
+    // 回帰テスト: 期限を渡さないとjschannelは応答を待ち続け、呼び出しの
+    // Promiseが永久に未解決のまま残る。画面破棄時の後始末がそれを待つため、
+    // プレイヤーの破棄自体が行われなくなる。
+    const { calls, channel } = createChannel()
+    const player = new PeerTubePlayer(
+      { contentWindow: window, remove: vi.fn() } as unknown as HTMLIFrameElement,
+      { channelFactory: { build: () => channel } },
+    )
+
+    const commands = [player.getCurrentTime(), player.seek(10), player.play(), player.pause()]
+    // isReady 以降のコマンド呼び出しはすべて期限付き
+    expect(calls.slice(1).map((call) => call.timeout)).toEqual([5000, 5000, 5000, 5000])
+
+    // jschannelは期限切れをerror(コード, メッセージ)で通知する
+    calls[1]?.error('timeout_error', "timeout (5000ms) exceeded on method 'getCurrentTime'")
+    await expect(commands[0]).rejects.toThrow("timeout (5000ms) exceeded on method 'getCurrentTime'")
+
+    calls.slice(2).forEach((call) => call.error('timeout_error', 'timed out'))
+    await Promise.all(commands.slice(1).map((c) => expect(c).rejects.toThrow('timed out')))
+  })
+
+  it('rejects a command the embed never answers, through the real jschannel timeout', async () => {
+    // 回帰テスト: 応答が一切返らない埋め込みを実物のjschannelで再現する。
+    // 期限が無いとこのPromiseは永久に未解決のままとなり、画面破棄時の
+    // 後始末がそこで止まってプレイヤーが破棄されなくなる。
+    vi.useFakeTimers()
+
+    // postMessageを受け取るだけで何も返さない、応答しないiframe
+    const silentWindow = { postMessage: vi.fn() } as unknown as Window
+    const player = new PeerTubePlayer(
+      { contentWindow: silentWindow, remove: vi.fn() } as unknown as HTMLIFrameElement,
+      { scope: 'never-answers' },
+    )
+
+    const pending = player.getCurrentTime()
+    const rejection = expect(pending).rejects.toThrow(/timeout \(5000ms\) exceeded/)
+
+    await vi.advanceTimersByTimeAsync(5000)
+    await rejection
+
+    player.destroy()
+    vi.useRealTimers()
   })
 
   it('rejects failed player commands and requires an iframe content window', async () => {

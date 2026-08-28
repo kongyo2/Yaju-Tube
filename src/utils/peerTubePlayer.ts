@@ -3,8 +3,12 @@ import Channel from 'jschannel'
 export interface PeerTubeChannelCall {
   method: string
   params?: unknown
+  // jschannelは応答が返るまでトランザクションを保持し続けるため、期限を
+  // 渡さないと呼び出しのPromiseが永久に未解決のまま残る
+  timeout?: number
   success(result: unknown): void
-  error(error: unknown): void
+  // jschannelはエラーコードとメッセージの2引数で呼び出す
+  error(error: unknown, message?: unknown): void
 }
 
 // jschannelのバインドハンドラは(トランザクション, パラメータ)の2引数で呼ばれ、
@@ -12,6 +16,9 @@ export interface PeerTubeChannelCall {
 export interface PeerTubeChannel {
   bind(method: string, handler: (transaction: unknown, params?: unknown) => void): void
   call(options: PeerTubeChannelCall): void
+  // jschannelはチャンネルをグローバルなテーブルへ登録し、windowのmessage
+  // リスナーも張る。destroy()を呼ばない限りどちらも残り続ける
+  destroy(): void
 }
 
 export interface PeerTubeChannelFactory {
@@ -34,6 +41,11 @@ interface PlaybackStatus {
 }
 
 const defaultChannelFactory = Channel as PeerTubeChannelFactory
+
+// 埋め込みへの各操作（pause / play / seek / getCurrentTime）の応答待ち上限。
+// 画面破棄時の後始末が応答の無い埋め込みに引きずられて止まらないよう、
+// プレイヤー準備待ちと同じ5秒で打ち切る。
+const CALL_TIMEOUT_MS = 5000
 
 export class PeerTubePlayer {
   private readonly channel: PeerTubeChannel
@@ -74,7 +86,17 @@ export class PeerTubePlayer {
     return this.readyPromise
   }
 
+  // iframeを外すだけではjschannelの登録は解けない。destroy()を呼ばないと
+  // グローバルテーブルの項目とwindowのmessageリスナーが動画ページを開くたびに
+  // 積み上がるため、チャンネルも明示的に破棄する
   destroy(): void {
+    try {
+      this.channel.destroy()
+    } catch (e) {
+      // 破棄済みチャンネルの二重破棄などは無視してiframe除去まで進める
+      console.debug('Destroying the PeerTube channel failed:', e)
+    }
+
     this.embedElement.remove()
   }
 
@@ -151,12 +173,19 @@ export class PeerTubePlayer {
     })
   }
 
+  // 埋め込みが応答しない場合（読み込み失敗、離脱直後のiframe破棄など）、
+  // jschannelは応答を待ち続けるため期限を渡さないとPromiseが永久に未解決に
+  // なる。画面破棄時の後始末はこのPromiseの完了を待つので、期限が無いと
+  // プレイヤーの破棄自体が行われなくなってしまう。必ず期限付きで呼び出す。
   private sendMessage<T>(method: string, params?: unknown): Promise<T> {
     return new Promise((resolve, reject) => {
       const call: PeerTubeChannelCall = {
         method,
+        timeout: CALL_TIMEOUT_MS,
         success: (result) => resolve(result as T),
-        error: reject,
+        error: (error, message) => {
+          reject(new Error(typeof message === 'string' ? message : String(error)))
+        },
       }
 
       if (params !== undefined) {
