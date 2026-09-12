@@ -70,6 +70,19 @@
           <ion-card-subtitle>{{ item.ownerName }}</ion-card-subtitle>
         </ion-card-header>
         <div class="nico-meta nico-card-meta">{{ metaLine(item) }}</div>
+        <div
+          v-if="removeLabel"
+          class="nico-card-actions"
+        >
+          <ion-button
+            fill="clear"
+            size="small"
+            color="danger"
+            @click.stop="$emit('remove', item)"
+          >
+            {{ removeLabel }}
+          </ion-button>
+        </div>
       </ion-card>
     </div>
   </div>
@@ -77,6 +90,7 @@
 
 <script setup lang="ts">
 import {
+  IonButton,
   IonCard,
   IonCardHeader,
   IonCardSubtitle,
@@ -174,6 +188,12 @@ function onImageError(event: Event) {
 
 .nico-card-meta {
   padding: 0 1rem 0.75rem;
+}
+
+.nico-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0.5rem 0.5rem;
 }
 
 ion-thumbnail {

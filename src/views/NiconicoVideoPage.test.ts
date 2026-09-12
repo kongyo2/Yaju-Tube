@@ -30,6 +30,16 @@ vi.mock('@ionic/vue', async (importOriginal) => {
   }
 })
 
+const appMocks = vi.hoisted(() => ({
+  addListener: vi.fn(),
+  remove: vi.fn(),
+  handler: undefined as ((state: { isActive: boolean }) => void) | undefined,
+}))
+
+vi.mock('@capacitor/app', () => ({
+  App: { addListener: appMocks.addListener },
+}))
+
 const apiMocks = vi.hoisted(() => ({
   fetchWatchDetail: vi.fn(),
   fetchComments: vi.fn(),
@@ -183,6 +193,12 @@ function buttonWithText(wrapper: VueWrapper, text: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  appMocks.handler = undefined
+  appMocks.addListener.mockImplementation(async (_event: string, handler: (state: { isActive: boolean }) => void) => {
+    appMocks.handler = handler
+
+    return { remove: appMocks.remove.mockResolvedValue(undefined) }
+  })
   overlayMocks.toastMessages = []
   overlayMocks.latestSheetButtons = []
   overlayMocks.toastCreate.mockImplementation(async (options: { message: string }) => {
@@ -264,17 +280,22 @@ describe('loading a video', () => {
     expect(router.currentRoute.value.fullPath).toBe('/tabs/nico/sm2')
   })
 
-  it('loads the new video when the route parameter changes', async () => {
-    const { router, wrapper } = await mountPage()
+  it('never adopts another video when the route moves on', async () => {
+    const { historyStore, playerWindow, router, wrapper } = await mountPage()
+
+    emitPlayerMetadata({ currentTime: 45_000, duration: 320_000 }, playerWindow)
+    await flushPromises()
 
     apiMocks.fetchWatchDetail.mockResolvedValue(watchDetail({ videoId: 'sm2', title: '次の動画' }))
 
     await router.push('/tabs/nico/sm2')
     await flushPromises()
 
-    expect(apiMocks.fetchWatchDetail).toHaveBeenLastCalledWith(expect.anything(), 'sm2')
-    expect(wrapper.text()).toContain('次の動画')
-    expect(wrapper.get('iframe').attributes('src')).toBe('https://embed.nicovideo.jp/watch/sm2?jsapi=1&playerId=1')
+    expect(apiMocks.fetchWatchDetail).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('レッツゴー！陰陽師')
+    expect(wrapper.get('iframe').attributes('src')).toBe('https://embed.nicovideo.jp/watch/sm9?jsapi=1&playerId=1')
+    expect(historyStore.getHistoryItem('sm9')).toMatchObject({ progress: 45 })
+    expect(historyStore.getHistoryItem('sm2')).toBeUndefined()
   })
 
   it('searches the tapped tag', async () => {
@@ -440,6 +461,86 @@ describe('app playlist and progress', () => {
     expect(historyStore.getHistoryItem('sm9')).toMatchObject({ progress: 90 })
 
     wrapper.unmount()
+  })
+
+  it('pauses and saves when the native app goes to the background', async () => {
+    const { historyStore, playerWindow, wrapper } = await mountPage()
+    const postMessage = (playerWindow as { postMessage: ReturnType<typeof vi.fn> }).postMessage
+
+    emitPlayerMetadata({ currentTime: 30_000, duration: 320_000 }, playerWindow)
+    await flushPromises()
+
+    expect(appMocks.handler).toBeTypeOf('function')
+    appMocks.handler?.({ isActive: false })
+    await flushPromises()
+
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ eventName: 'pause' }),
+      NICO_EMBED_ORIGIN,
+    )
+    expect(historyStore.getHistoryItem('sm9')).toMatchObject({ progress: 30 })
+
+    wrapper.unmount()
+  })
+
+  it('keeps the stored position while the embed still reports zero', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const historyStore = useHistoryStore()
+    historyStore.addToHistory({
+      videoId: 'sm9',
+      videoName: 'レッツゴー！陰陽師',
+      thumbnailPath: '',
+      channelName: '中の',
+      instanceUrl: NICO_INSTANCE_URL,
+      source: 'niconico',
+    })
+    historyStore.updateProgress('sm9', 120, 320)
+
+    const router = createTestRouter([
+      { path: '/tabs/tab7', component: { template: '<div />' } },
+      { path: '/tabs/nico/:videoId', component: { template: '<div />' } },
+    ])
+    await router.push('/tabs/nico/sm9')
+    await router.isReady()
+
+    const wrapper = mount(NiconicoVideoPage, {
+      attachTo: document.body,
+      global: testGlobal(pinia, router, ionicStubs),
+    })
+    await flushPromises()
+
+    const playerWindow = stubPlayerWindow(wrapper)
+
+    emitPlayerMetadata({ currentTime: 0, duration: 320_000, isVideoMetaDataLoaded: true }, playerWindow)
+    await flushPromises()
+
+    expect(historyStore.getHistoryItem('sm9')).toMatchObject({ progress: 120 })
+
+    emitPlayerMetadata({ currentTime: 121_000, duration: 320_000 }, playerWindow)
+    await flushPromises()
+
+    expect(historyStore.getHistoryItem('sm9')).toMatchObject({ progress: 121 })
+
+    wrapper.unmount()
+  })
+
+  it('ignores a detail that arrives after the page was torn down', async () => {
+    let resolveFirst: ((detail: NicoWatchDetail) => void) | undefined
+    apiMocks.fetchWatchDetail.mockImplementationOnce(
+      () => new Promise<NicoWatchDetail>((resolve) => {
+        resolveFirst = resolve
+      }),
+    )
+
+    const { historyStore, wrapper } = await mountPage()
+
+    wrapper.unmount()
+
+    resolveFirst?.(watchDetail({ videoId: 'sm9', title: '遅れて届いた動画' }))
+    await flushPromises()
+
+    expect(historyStore.history).toHaveLength(0)
   })
 
   it('resumes from the stored position once the player can seek', async () => {

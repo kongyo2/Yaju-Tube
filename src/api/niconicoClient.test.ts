@@ -17,6 +17,7 @@ const {
   getNiconicoClient,
   hasWebProxy,
   headersToRecord,
+  isLocalServer,
   isNativePlatform,
   nativeNicoFetch,
   resetNiconicoClient,
@@ -132,6 +133,7 @@ describe('webNicoFetch', () => {
     expect(hasWebProxy()).toBe(true)
 
     vi.stubEnv('DEV', false)
+    vi.stubGlobal('location', { hostname: 'kongyo2.github.io' })
 
     expect(hasWebProxy()).toBe(false)
     await expect(
@@ -140,6 +142,20 @@ describe('webNicoFetch', () => {
     expect(fetchMock).not.toHaveBeenCalled()
 
     vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps using the bundled proxy on a local dev or preview server', () => {
+    vi.stubEnv('DEV', false)
+
+    for (const hostname of ['localhost', '127.0.0.1']) {
+      vi.stubGlobal('location', { hostname })
+      expect(isLocalServer()).toBe(true)
+      expect(hasWebProxy()).toBe(true)
+    }
+
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
   })
 
   it('leaves a non-niconico URL untouched', async () => {

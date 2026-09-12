@@ -565,6 +565,7 @@ async function load() {
 
     videos.value = []
     hasNext.value = false
+    niconicoStore.dropRejectedSession(error)
     errorMessage.value = t(nicoErrorKey(error))
   } finally {
     if (!isStale()) {
@@ -691,6 +692,7 @@ async function removeEntry(item: NicoVideoCard) {
 
     videos.value = videos.value.filter((candidate) => candidate.videoId !== item.videoId)
   } catch (error) {
+    niconicoStore.dropRejectedSession(error)
     errorMessage.value = t(nicoErrorKey(error))
   }
 }
@@ -810,6 +812,8 @@ watch(
 )
 
 onMounted(async () => {
+  void niconicoStore.ensureVerified()
+
   await loadGenres()
 
   const routeTag = route.query['tag']

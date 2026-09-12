@@ -23,8 +23,18 @@ function isDevServer(): boolean {
   }
 }
 
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
+
+export function isLocalServer(): boolean {
+  try {
+    return LOCAL_HOSTNAMES.has(globalThis.location?.hostname ?? '')
+  } catch {
+    return false
+  }
+}
+
 export function hasWebProxy(): boolean {
-  return WEB_PROXY_BASE.length > 0 || isDevServer()
+  return WEB_PROXY_BASE.length > 0 || isDevServer() || isLocalServer()
 }
 
 export function isNativePlatform(): boolean {

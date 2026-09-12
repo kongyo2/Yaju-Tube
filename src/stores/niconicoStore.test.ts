@@ -134,6 +134,45 @@ describe('verify', () => {
   })
 })
 
+describe('ensureVerified', () => {
+  it('verifies a restored session once per app start', async () => {
+    const store = useNiconicoStore()
+    store.session = 'user_session_1_abc'
+
+    await expect(store.ensureVerified()).resolves.toBe(true)
+    await expect(store.ensureVerified()).resolves.toBe(true)
+
+    expect(clientMocks.verifySession).toHaveBeenCalledTimes(1)
+  })
+
+  it('does nothing without a stored session', async () => {
+    const store = useNiconicoStore()
+
+    await expect(store.ensureVerified()).resolves.toBe(false)
+    expect(clientMocks.verifySession).not.toHaveBeenCalled()
+  })
+})
+
+describe('dropRejectedSession', () => {
+  it('clears a session niconico rejected during a later request', async () => {
+    const store = useNiconicoStore()
+    await store.login('user_session_1_abc')
+
+    expect(store.dropRejectedSession(new NiconicoApiError('https://example.test', { status: 401 }))).toBe(true)
+    expect(store.isLoggedIn).toBe(false)
+    expect(store.errorKey).toBe('nico.errors.unauthorized')
+  })
+
+  it('keeps the session for failures that are not about the cookie', async () => {
+    const store = useNiconicoStore()
+    await store.login('user_session_1_abc')
+
+    expect(store.dropRejectedSession(new NiconicoApiError('https://example.test', { status: 403 }))).toBe(false)
+    expect(store.dropRejectedSession(new Error('offline'))).toBe(false)
+    expect(store.isLoggedIn).toBe(true)
+  })
+})
+
 describe('logout', () => {
   it('clears the session, the profile and the cached client', async () => {
     const store = useNiconicoStore()

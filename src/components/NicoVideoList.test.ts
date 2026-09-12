@@ -5,6 +5,11 @@ import type { NicoVideoCard } from '@/api/niconico'
 import NicoVideoList from './NicoVideoList.vue'
 
 const ionicStubs = {
+  IonButton: {
+    name: 'IonButton',
+    emits: ['click'],
+    template: '<button @click="$emit(\'click\', $event)"><slot /></button>',
+  },
   IonCard: { template: '<div><slot /></div>' },
   IonCardHeader: { template: '<div><slot /></div>' },
   IonCardSubtitle: { template: '<p><slot /></p>' },
@@ -109,6 +114,16 @@ describe('NicoVideoList', () => {
     await gridCard.trigger('keydown.space')
 
     expect(wrapper.emitted('select')).toEqual([['sm9'], ['sm9']])
+  })
+
+  it('offers the remove action in grid mode too', async () => {
+    const wrapper = mountList({ items: [card()], mode: 'grid', removeLabel: '削除' })
+    const removeButton = wrapper.get('.nico-card-actions button')
+
+    await removeButton.trigger('click')
+
+    expect(wrapper.emitted('remove')?.[0]?.[0]).toMatchObject({ videoId: 'sm9' })
+    expect(wrapper.emitted('select')).toBeUndefined()
   })
 
   it('shows the placeholder when the payload carries no thumbnail', () => {

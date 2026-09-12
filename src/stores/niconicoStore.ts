@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { extractUserSession, nicoErrorKey } from '@/api/niconico'
+import { extractUserSession, isSessionRejected, nicoErrorKey } from '@/api/niconico'
 import { getNiconicoClient, resetNiconicoClient } from '@/api/niconicoClient'
 
 export interface NicoUser {
@@ -15,6 +15,7 @@ export const useNiconicoStore = defineStore('niconico', () => {
   const user = ref<NicoUser | null>(null)
   const errorKey = ref<string | null>(null)
   const isVerifying = ref(false)
+  const isVerified = ref(false)
 
   const isLoggedIn = computed(() => session.value !== null && user.value !== null)
 
@@ -23,6 +24,7 @@ export const useNiconicoStore = defineStore('niconico', () => {
   const clearSession = () => {
     session.value = null
     user.value = null
+    isVerified.value = false
     resetNiconicoClient()
   }
 
@@ -47,6 +49,7 @@ export const useNiconicoStore = defineStore('niconico', () => {
         iconUrl: verified.iconUrl ?? null,
       }
       errorKey.value = null
+      isVerified.value = true
 
       return true
     } catch (error) {
@@ -76,6 +79,7 @@ export const useNiconicoStore = defineStore('niconico', () => {
         iconUrl: verified.iconUrl ?? null,
       }
       errorKey.value = null
+      isVerified.value = true
 
       return true
     } catch (error) {
@@ -93,6 +97,25 @@ export const useNiconicoStore = defineStore('niconico', () => {
     }
   }
 
+  const ensureVerified = async (): Promise<boolean> => {
+    if (session.value === null || isVerified.value || isVerifying.value) {
+      return isVerified.value
+    }
+
+    return verify()
+  }
+
+  const dropRejectedSession = (error: unknown): boolean => {
+    if (!isSessionRejected(error)) {
+      return false
+    }
+
+    clearSession()
+    errorKey.value = 'nico.errors.unauthorized'
+
+    return true
+  }
+
   const logout = () => {
     clearSession()
     errorKey.value = null
@@ -103,10 +126,13 @@ export const useNiconicoStore = defineStore('niconico', () => {
     user,
     errorKey,
     isVerifying,
+    isVerified,
     isLoggedIn,
     client,
     login,
     verify,
+    ensureVerified,
+    dropRejectedSession,
     logout,
   }
 }, {

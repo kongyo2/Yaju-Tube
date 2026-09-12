@@ -658,6 +658,14 @@ export function formatDuration(totalSeconds: number): string {
   return `${String(minutes)}:${paddedSeconds}`
 }
 
+export function isSessionRejected(error: unknown): boolean {
+  if (error instanceof NiconicoAuthError) {
+    return true
+  }
+
+  return isNiconicoApiError(error) && error.isUnauthorized()
+}
+
 export function nicoErrorKey(error: unknown): string {
   if (error instanceof NicoProxyUnavailableError) {
     return 'nico.errors.proxyUnavailable'

@@ -214,6 +214,7 @@
 <script setup lang="ts">
 import {
   actionSheetController,
+  onIonViewDidEnter,
   onIonViewWillLeave,
   IonBackButton,
   IonButton,
@@ -242,6 +243,8 @@ import {
   timeOutline,
 } from 'ionicons/icons'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { App } from '@capacitor/app'
+import type { PluginListenerHandle } from '@capacitor/core'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
@@ -284,6 +287,7 @@ const historyStore = useHistoryStore()
 const playlistStore = usePlaylistStore()
 
 const videoId = ref(String(route.params['videoId'] ?? ''))
+const videoRoutePath = `${NICO_VIDEO_ROUTE_PREFIX}${videoId.value}`
 const detail = ref<NicoWatchDetail | null>(null)
 const related = ref<NicoVideoCard[]>([])
 const comments = ref<CommentItem[]>([])
@@ -299,6 +303,10 @@ const iframeRef = ref<HTMLIFrameElement | null>(null)
 let player: NicoEmbedPlayer | null = null
 let lastSavedAt = 0
 let isUnmounted = false
+let isViewActive = true
+let hasObservedPosition = false
+let loadGeneration = 0
+let appStateListener: PluginListenerHandle | null = null
 
 const watchUrl = computed(() => nicoWatchUrl(videoId.value))
 
@@ -371,6 +379,10 @@ function attachPlayer(durationSeconds: number) {
   })
 
   embed.onStatus((status) => {
+    if (!isStorablePosition(status.currentTimeMs)) {
+      return
+    }
+
     const now = Date.now()
 
     if (now - lastSavedAt < PROGRESS_SAVE_INTERVAL_MS) {
@@ -386,10 +398,19 @@ function attachPlayer(durationSeconds: number) {
   })
 }
 
+function isStorablePosition(currentTimeMs: number): boolean {
+  if (currentTimeMs > 0) {
+    hasObservedPosition = true
+    return true
+  }
+
+  return hasObservedPosition
+}
+
 function saveProgress(savedVideoId: string, fallbackDuration: number) {
   const status = player?.status
 
-  if (!status) {
+  if (!status || !isStorablePosition(status.currentTimeMs)) {
     return
   }
 
@@ -410,6 +431,7 @@ function releasePlayer() {
   player?.destroy()
   player = null
   lastSavedAt = 0
+  hasObservedPosition = false
 }
 
 async function renderDescription(description: string) {
@@ -425,15 +447,21 @@ async function renderDescription(description: string) {
   }
 }
 
-async function loadRelated() {
+async function loadRelated(generation = loadGeneration) {
   try {
-    related.value = (await fetchRelatedVideos(niconicoStore.client, videoId.value)).slice(0, 20)
+    const items = await fetchRelatedVideos(niconicoStore.client, videoId.value)
+
+    if (generation === loadGeneration) {
+      related.value = items.slice(0, 20)
+    }
   } catch {
-    related.value = []
+    if (generation === loadGeneration) {
+      related.value = []
+    }
   }
 }
 
-async function loadComments() {
+async function loadComments(generation = loadGeneration) {
   const current = detail.value
 
   if (!current?.nvComment) {
@@ -443,19 +471,33 @@ async function loadComments() {
   isLoadingComments.value = true
 
   try {
-    comments.value = await fetchComments(niconicoStore.client, current.nvComment)
+    const loaded = await fetchComments(niconicoStore.client, current.nvComment)
+
+    if (generation === loadGeneration) {
+      comments.value = loaded
+    }
   } catch (error) {
-    errorMessage.value = t(nicoErrorKey(error))
+    if (generation === loadGeneration) {
+      errorMessage.value = t(nicoErrorKey(error))
+    }
   } finally {
-    isLoadingComments.value = false
+    if (generation === loadGeneration) {
+      isLoadingComments.value = false
+    }
   }
 }
 
 async function loadVideo() {
-  try {
-    const loaded = await fetchWatchDetail(niconicoStore.client, videoId.value)
+  loadGeneration += 1
 
-    if (isUnmounted) {
+  const generation = loadGeneration
+  const requestedVideoId = videoId.value
+  const isStale = () => isUnmounted || generation !== loadGeneration
+
+  try {
+    const loaded = await fetchWatchDetail(niconicoStore.client, requestedVideoId)
+
+    if (isStale()) {
       return
     }
 
@@ -466,11 +508,20 @@ async function loadVideo() {
     rememberInHistory(loaded)
     await renderDescription(loaded.description)
     await nextTick()
+
+    if (isStale()) {
+      return
+    }
+
     attachPlayer(loaded.durationSeconds)
 
-    void loadComments()
-    void loadRelated()
+    void loadComments(generation)
+    void loadRelated(generation)
   } catch (error) {
+    if (isStale()) {
+      return
+    }
+
     detail.value = null
     errorMessage.value = t(nicoErrorKey(error))
   }
@@ -602,52 +653,48 @@ function openVideo(nextVideoId: string) {
   void router.push(`${NICO_VIDEO_ROUTE_PREFIX}${nextVideoId}`)
 }
 
-function resetVideoState() {
-  detail.value = null
-  related.value = []
-  comments.value = []
-  descriptionHtml.value = ''
-  errorMessage.value = ''
-  commentBody.value = ''
-  resumeSeconds.value = 0
-}
+onIonViewDidEnter(() => {
+  isViewActive = true
+})
 
 onIonViewWillLeave(() => {
+  isViewActive = false
   suspendPlayback()
 })
 
 watch(
   () => route.path,
-  (newPath, oldPath) => {
-    if (oldPath.startsWith(NICO_VIDEO_ROUTE_PREFIX) && !newPath.startsWith(NICO_VIDEO_ROUTE_PREFIX)) {
+  (newPath) => {
+    if (newPath !== videoRoutePath) {
+      isViewActive = false
       suspendPlayback()
     }
   },
 )
 
-watch(
-  () => route.params['videoId'],
-  (next) => {
-    const nextVideoId = typeof next === 'string' ? next : ''
-
-    if (nextVideoId.length === 0 || nextVideoId === videoId.value) {
-      return
-    }
-
-    releasePlayer()
-    videoId.value = nextVideoId
-    resetVideoState()
-    void loadVideo()
-  },
-)
-
-onMounted(() => {
+onMounted(async () => {
   void loadVideo()
+
+  appStateListener = await App.addListener('appStateChange', ({ isActive }) => {
+    if (!isActive && isViewActive) {
+      suspendPlayback()
+    }
+  })
+
+  if (isUnmounted) {
+    void appStateListener.remove().catch(() => undefined)
+    appStateListener = null
+  }
 })
 
 onBeforeUnmount(() => {
   isUnmounted = true
   releasePlayer()
+
+  if (appStateListener) {
+    void appStateListener.remove().catch(() => undefined)
+    appStateListener = null
+  }
 })
 </script>
 
