@@ -187,6 +187,42 @@ describe('niconico dev proxy', () => {
     expect(response.statusCode).toBe(400)
   })
 
+  it('follows a redirect that stays inside niconico', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(null, { status: 302, headers: { location: 'https://www.nicovideo.jp/watch/sm9' } }),
+      )
+      .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }))
+    const response = responseStub()
+
+    await createNiconicoProxyMiddleware(fetchImpl as unknown as typeof fetch)(
+      requestStub('/nicoapi/nico.ms/sm9'),
+      response as unknown as ServerResponse,
+      vi.fn(),
+    )
+
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe('https://www.nicovideo.jp/watch/sm9')
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toBe('{"ok":true}')
+  })
+
+  it('refuses to follow a redirect that leaves niconico', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(null, { status: 302, headers: { location: 'https://evil.test/steal' } }),
+    )
+    const response = responseStub()
+
+    await createNiconicoProxyMiddleware(fetchImpl as unknown as typeof fetch)(
+      requestStub('/nicoapi/www.nicovideo.jp/watch/sm9'),
+      response as unknown as ServerResponse,
+      vi.fn(),
+    )
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(response.statusCode).toBe(502)
+    expect(response.body).toContain('evil.test')
+  })
+
   it('reports an upstream failure as a gateway error', async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('upstream is down')

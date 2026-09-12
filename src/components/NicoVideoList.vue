@@ -52,7 +52,11 @@
       v-for="item in items"
       :key="item.videoId"
       class="nico-card"
+      role="button"
+      tabindex="0"
       @click="$emit('select', item.videoId)"
+      @keydown.enter.prevent="$emit('select', item.videoId)"
+      @keydown.space.prevent="$emit('select', item.videoId)"
     >
       <ion-card>
         <img

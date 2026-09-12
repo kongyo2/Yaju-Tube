@@ -15,6 +15,7 @@ const {
   buildResponse,
   createNicoFetch,
   getNiconicoClient,
+  hasWebProxy,
   headersToRecord,
   isNativePlatform,
   nativeNicoFetch,
@@ -120,6 +121,25 @@ describe('webNicoFetch', () => {
       'x-frontend-id': '6',
     })
     expect(call?.[1].credentials).toBe('omit')
+  })
+
+  it('refuses to guess a proxy when the build has none', async () => {
+    const fetchMock = vi.fn<(input: string, init: RequestInit) => Promise<Response>>(
+      async () => new Response('{}', { status: 200 }),
+    )
+
+    vi.stubGlobal('fetch', fetchMock)
+    expect(hasWebProxy()).toBe(true)
+
+    vi.stubEnv('DEV', false)
+
+    expect(hasWebProxy()).toBe(false)
+    await expect(
+      webNicoFetch('https://nvapi.nicovideo.jp/v1/genres', { method: 'GET', headers: {} }),
+    ).rejects.toThrow(/VITE_NICO_PROXY_BASE/)
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    vi.unstubAllEnvs()
   })
 
   it('leaves a non-niconico URL untouched', async () => {

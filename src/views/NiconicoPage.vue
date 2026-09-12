@@ -344,6 +344,7 @@ const nextHistoryCursor = ref<string | null>(null)
 let latestRequestId = 0
 let inFlight: AbortController | null = null
 let suggestionTimer: ReturnType<typeof setTimeout> | null = null
+let latestSuggestionId = 0
 
 const pageSize = computed(() => settingsStore.itemsPerPage)
 const canGoBack = computed(() => page.value > 1)
@@ -575,6 +576,8 @@ async function load() {
 function reload() {
   page.value = 1
   historyCursors.value = []
+  videos.value = []
+  itemIdByVideoId.value = new Map()
   void load()
 }
 
@@ -613,15 +616,24 @@ function onKeywordInput() {
 async function updateSuggestions() {
   const query = keyword.value.trim()
 
+  latestSuggestionId += 1
+  const requestId = latestSuggestionId
+
   if (query.length === 0) {
     suggestions.value = []
     return
   }
 
   try {
-    suggestions.value = (await fetchSuggestions(niconicoStore.client, query)).slice(0, 8)
+    const expanded = await fetchSuggestions(niconicoStore.client, query)
+
+    if (requestId === latestSuggestionId) {
+      suggestions.value = expanded.slice(0, 8)
+    }
   } catch {
-    suggestions.value = []
+    if (requestId === latestSuggestionId) {
+      suggestions.value = []
+    }
   }
 }
 
@@ -800,7 +812,9 @@ watch(
 onMounted(async () => {
   await loadGenres()
 
-  if (typeof route.query['tag'] === 'string') {
+  const routeTag = route.query['tag']
+
+  if (typeof routeTag === 'string' && routeTag.length > 0) {
     applyRouteQuery()
     return
   }

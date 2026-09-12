@@ -1,6 +1,6 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { NiconicoClient, type FetchLike } from '@kongyo2/niconicojs'
-import { toForwardedHeaders, toNicoProxyPath } from './niconicoProxy'
+import { NicoProxyUnavailableError, toForwardedHeaders, toNicoProxyPath } from './niconicoProxy'
 
 const REQUEST_TIMEOUT_MS = 20_000
 
@@ -13,6 +13,18 @@ function readProxyBase(): string {
   } catch {
     return ''
   }
+}
+
+function isDevServer(): boolean {
+  try {
+    return import.meta.env.DEV === true
+  } catch {
+    return false
+  }
+}
+
+export function hasWebProxy(): boolean {
+  return WEB_PROXY_BASE.length > 0 || isDevServer()
 }
 
 export function isNativePlatform(): boolean {
@@ -147,6 +159,10 @@ export const webNicoFetch: FetchLike = async (url, init) => {
 
   if (proxyPath === null) {
     return fetch(url, init)
+  }
+
+  if (!hasWebProxy()) {
+    throw new NicoProxyUnavailableError()
   }
 
   return fetch(`${WEB_PROXY_BASE}${proxyPath}`, {

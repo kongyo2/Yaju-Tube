@@ -202,7 +202,8 @@
       "placeholder": "コメントを入力",
       "post": "投稿",
       "posted": "コメントを投稿しました",
-      "loginRequired": "コメントの投稿にはログインが必要です"
+      "loginRequired": "コメントの投稿にはログインが必要です",
+      "unavailable": "この動画にはコメントを投稿できません。"
     },
     "actions": {
       "like": "いいね",
@@ -234,7 +235,9 @@
       "rateLimited": "リクエストが多すぎます。しばらく待ってから再度お試しください。",
       "api": "ニコニコ動画のAPIでエラーが発生しました。",
       "unexpected": "予期しないエラーが発生しました。",
-      "invalidSession": "user_session クッキーの形式が正しくありません。"
+      "invalidSession": "user_session クッキーの形式が正しくありません。",
+      "proxyUnavailable": "この環境ではニコニコ動画APIへの中継先が設定されていません。",
+      "forbidden": "この動画は再生できません。チャンネル会員限定や購入が必要な動画の可能性があります。"
     },
     "empty": "動画がありません",
     "page": "ページ {n}"

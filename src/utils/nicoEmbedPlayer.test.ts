@@ -7,24 +7,37 @@ const CONTROLLER_CONNECTOR = 1
 interface Harness {
   player: NicoEmbedPlayer
   postMessage: ReturnType<typeof vi.fn>
+  playerWindow: object
   emit: (eventName: string, data: unknown, overrides?: Record<string, unknown>) => void
+  dispatch: (options: { origin?: string; data: unknown; source?: unknown }) => void
 }
 
 function createHarness(): Harness {
   const postMessage = vi.fn()
-  const iframe = { contentWindow: { postMessage } } as unknown as HTMLIFrameElement
+  const playerWindow = { postMessage }
+  const iframe = { contentWindow: playerWindow } as unknown as HTMLIFrameElement
   const player = new NicoEmbedPlayer(iframe)
 
-  const emit = (eventName: string, data: unknown, overrides: Record<string, unknown> = {}) => {
-    window.dispatchEvent(
-      new MessageEvent('message', {
-        origin: NICO_EMBED_ORIGIN,
-        data: { sourceConnectorType: PLAYER_CONNECTOR, playerId: '1', eventName, data, ...overrides },
-      }),
-    )
+  const dispatch = (options: { origin?: string; data: unknown; source?: unknown }) => {
+    const event = new MessageEvent('message', {
+      origin: options.origin ?? NICO_EMBED_ORIGIN,
+      data: options.data,
+    })
+
+    Object.defineProperty(event, 'source', {
+      value: 'source' in options ? options.source : playerWindow,
+    })
+
+    window.dispatchEvent(event)
   }
 
-  return { player, postMessage, emit }
+  const emit = (eventName: string, data: unknown, overrides: Record<string, unknown> = {}) => {
+    dispatch({
+      data: { sourceConnectorType: PLAYER_CONNECTOR, playerId: '1', eventName, data, ...overrides },
+    })
+  }
+
+  return { player, postMessage, playerWindow, emit, dispatch }
 }
 
 let harness: Harness
@@ -155,14 +168,40 @@ describe('message filtering', () => {
     const listener = vi.fn()
     harness.player.onStatus(listener)
 
-    window.dispatchEvent(
-      new MessageEvent('message', {
-        origin: 'https://evil.test',
-        data: { sourceConnectorType: PLAYER_CONNECTOR, playerId: '1', eventName: 'playerMetadataChange', data: { currentTime: 5 } },
-      }),
-    )
+    harness.dispatch({
+      origin: 'https://evil.test',
+      data: { sourceConnectorType: PLAYER_CONNECTOR, playerId: '1', eventName: 'playerMetadataChange', data: { currentTime: 5 } },
+    })
 
     expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('ignores an embed that is not the one it owns', () => {
+    const listener = vi.fn()
+    harness.player.onStatus(listener)
+
+    harness.dispatch({
+      source: { postMessage: vi.fn() },
+      data: { sourceConnectorType: PLAYER_CONNECTOR, playerId: '1', eventName: 'playerMetadataChange', data: { currentTime: 5 } },
+    })
+
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('ignores every message once the iframe has no window', () => {
+    const player = new NicoEmbedPlayer({ contentWindow: null } as unknown as HTMLIFrameElement)
+    const listener = vi.fn()
+    player.onStatus(listener)
+
+    const event = new MessageEvent('message', {
+      origin: NICO_EMBED_ORIGIN,
+      data: { sourceConnectorType: PLAYER_CONNECTOR, playerId: '1', eventName: 'playerMetadataChange', data: { currentTime: 5 } },
+    })
+    Object.defineProperty(event, 'source', { value: null })
+    window.dispatchEvent(event)
+
+    expect(listener).not.toHaveBeenCalled()
+    player.destroy()
   })
 
   it('ignores another embed on the same page', () => {
@@ -187,8 +226,8 @@ describe('message filtering', () => {
     const listener = vi.fn()
     harness.player.onStatus(listener)
 
-    window.dispatchEvent(new MessageEvent('message', { origin: NICO_EMBED_ORIGIN, data: null }))
-    window.dispatchEvent(new MessageEvent('message', { origin: NICO_EMBED_ORIGIN, data: 'hello' }))
+    harness.dispatch({ data: null })
+    harness.dispatch({ data: 'hello' })
     harness.emit('playerMetadataChange', 'not-an-object')
 
     expect(listener).not.toHaveBeenCalled()

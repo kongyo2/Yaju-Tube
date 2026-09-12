@@ -98,6 +98,19 @@ describe('NicoVideoList', () => {
     expect(wrapper.find('.nico-card').exists()).toBe(true)
   })
 
+  it('opens a grid card from the keyboard', async () => {
+    const wrapper = mountList({ items: [card()], mode: 'grid' })
+    const gridCard = wrapper.get('.nico-card')
+
+    expect(gridCard.attributes('role')).toBe('button')
+    expect(gridCard.attributes('tabindex')).toBe('0')
+
+    await gridCard.trigger('keydown.enter')
+    await gridCard.trigger('keydown.space')
+
+    expect(wrapper.emitted('select')).toEqual([['sm9'], ['sm9']])
+  })
+
   it('shows the placeholder when the payload carries no thumbnail', () => {
     expect(mountList({ items: [card({ thumbnailUrl: '' })] }).get('img').attributes('src')).toBe('/placeholder.png')
   })

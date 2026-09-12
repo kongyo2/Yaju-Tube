@@ -260,6 +260,14 @@ describe('browsing', () => {
     expect(wrapper.text()).toContain('検索結果')
   })
 
+  it('loads the ranking when the tag query is present but empty', async () => {
+    const { wrapper } = await mountPage({ path: '/tabs/tab7?tag=' })
+
+    expect(apiMocks.fetchRanking).toHaveBeenCalled()
+    expect(apiMocks.searchVideos).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('レッツゴー！陰陽師')
+  })
+
   it('lists new arrivals', async () => {
     const { wrapper } = await mountPage()
 
@@ -371,6 +379,19 @@ describe('library', () => {
       expect.anything(),
       expect.objectContaining({ cursor: 'cursor-1' }),
     )
+  })
+
+  it('drops the previous rows as soon as the section changes', async () => {
+    const { wrapper } = await mountPage({ session: 'user_session_1234_abc' })
+
+    await switchSegment(wrapper, 'library')
+    expect(wrapper.text()).toContain('マイリスト動画')
+
+    apiMocks.fetchMyLikes.mockReturnValue(new Promise(() => undefined))
+    await setSelect(wrapper, 0, 'likes')
+
+    expect(wrapper.text()).not.toContain('マイリスト動画')
+    expect(wrapper.find('button.remove').exists()).toBe(false)
   })
 
   it('shows nothing to remove in the history list', async () => {

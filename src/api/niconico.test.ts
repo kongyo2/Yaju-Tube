@@ -254,6 +254,23 @@ describe('toWatchDetail', () => {
     })
   })
 
+  it('falls back to the channel when a video has no user owner', () => {
+    const detail = toWatchDetail(
+      watchResult({
+        owner: null,
+        channel: {
+          id: 'ch171',
+          name: 'テストチャンネル',
+          thumbnail: { url: 'https://example.test/ch.jpg', smallUrl: 'https://example.test/ch-small.jpg' },
+        },
+      }),
+    )
+
+    expect(detail.ownerName).toBe('テストチャンネル')
+    expect(detail.ownerIconUrl).toBe('https://example.test/ch.jpg')
+    expect(detail.ownerId).toBeNull()
+  })
+
   it('reports no like for a guest watch payload', () => {
     expect(toWatchDetail(watchResult({ video: { ...watchResult().data.video, viewer: null } })).isLiked).toBe(false)
   })
@@ -389,6 +406,13 @@ describe('fetchMylistItems', () => {
     expect(page.totalCount).toBe(1)
   })
 
+  it('reports a fallback response that carries no mylist', async () => {
+    stub.mylists.getMylist.mockRejectedValue(new NiconicoApiError('https://example.test', { status: 403 }))
+    stub.http.getJson.mockResolvedValue({ data: {} })
+
+    await expect(fetchMylistItems(client(), 99)).rejects.toThrow(/no mylist/)
+  })
+
   it('does not try the account namespace for a signed-out reader', async () => {
     stub.isLoggedIn.mockReturnValue(false)
     stub.mylists.getMylist.mockRejectedValue(new NiconicoApiError('https://example.test', { status: 403 }))
@@ -452,6 +476,12 @@ describe('nicoErrorKey', () => {
     expect(nicoErrorKey(new NiconicoApiError('https://example.test', { status: 403 }))).toBe('nico.errors.unauthorized')
     expect(nicoErrorKey(new NiconicoApiError('https://example.test', { status: 404 }))).toBe('nico.errors.notFound')
     expect(nicoErrorKey(new NiconicoApiError('https://example.test', { status: 429 }))).toBe('nico.errors.rateLimited')
+    expect(
+      nicoErrorKey(new NiconicoApiError('https://example.test', { status: 403, errorDetail: 'AB001' })),
+    ).toBe('nico.errors.rateLimited')
+    expect(
+      nicoErrorKey(new NiconicoApiError('https://example.test', { status: 400, errorCode: 'FORBIDDEN' })),
+    ).toBe('nico.errors.forbidden')
     expect(nicoErrorKey(new NiconicoApiError('https://example.test', { status: 500 }))).toBe('nico.errors.api')
     expect(nicoErrorKey(new Error('boom'))).toBe('nico.errors.unexpected')
   })

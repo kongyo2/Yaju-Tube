@@ -170,7 +170,7 @@
           v-else
           class="nico-note"
         >
-          {{ $t('nico.comments.loginRequired') }}
+          {{ detail.defaultThreadId === null ? $t('nico.comments.unavailable') : $t('nico.comments.loginRequired') }}
         </div>
 
         <ion-list v-if="comments.length > 0">
@@ -214,6 +214,7 @@
 <script setup lang="ts">
 import {
   actionSheetController,
+  onIonViewWillLeave,
   IonBackButton,
   IonButton,
   IonButtons,
@@ -240,7 +241,7 @@ import {
   openOutline,
   timeOutline,
 } from 'ionicons/icons'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
@@ -270,6 +271,7 @@ import { NicoEmbedPlayer } from '@/utils/nicoEmbedPlayer'
 import { sanitizeHtml } from '@/utils/sanitize'
 import '../theme/variables.css'
 
+const NICO_VIDEO_ROUTE_PREFIX = '/tabs/nico/'
 const PROGRESS_SAVE_INTERVAL_MS = 5000
 const RESUME_MIN_DURATION_SECONDS = 30
 const RESUME_END_THRESHOLD_SECONDS = 10
@@ -281,7 +283,7 @@ const niconicoStore = useNiconicoStore()
 const historyStore = useHistoryStore()
 const playlistStore = usePlaylistStore()
 
-const videoId = String(route.params['videoId'] ?? '')
+const videoId = ref(String(route.params['videoId'] ?? ''))
 const detail = ref<NicoWatchDetail | null>(null)
 const related = ref<NicoVideoCard[]>([])
 const comments = ref<CommentItem[]>([])
@@ -298,11 +300,11 @@ let player: NicoEmbedPlayer | null = null
 let lastSavedAt = 0
 let isUnmounted = false
 
-const watchUrl = computed(() => nicoWatchUrl(videoId))
+const watchUrl = computed(() => nicoWatchUrl(videoId.value))
 
-const embedUrl = computed(() => embedPlayerUrl(videoId))
+const embedUrl = computed(() => embedPlayerUrl(videoId.value))
 
-const isSavedToPlaylist = computed(() => playlistStore.isInPlaylist(videoId, NICO_INSTANCE_URL))
+const isSavedToPlaylist = computed(() => playlistStore.isInPlaylist(videoId.value, NICO_INSTANCE_URL))
 
 const statsLine = computed(() => {
   const current = detail.value
@@ -326,7 +328,7 @@ async function showToast(message: string) {
 }
 
 function computeResumeSeconds(durationSeconds: number): number {
-  const saved = historyStore.getHistoryItem(videoId)?.progress ?? 0
+  const saved = historyStore.getHistoryItem(videoId.value)?.progress ?? 0
 
   if (saved <= 0 || durationSeconds < RESUME_MIN_DURATION_SECONDS) {
     return 0
@@ -358,6 +360,7 @@ function attachPlayer(durationSeconds: number) {
   }
 
   const embed = new NicoEmbedPlayer(frame)
+  const trackedVideoId = videoId.value
 
   player = embed
 
@@ -376,11 +379,37 @@ function attachPlayer(durationSeconds: number) {
 
     lastSavedAt = now
     historyStore.updateProgress(
-      videoId,
+      trackedVideoId,
       status.currentTimeMs / 1000,
       status.durationMs > 0 ? status.durationMs / 1000 : durationSeconds,
     )
   })
+}
+
+function saveProgress(savedVideoId: string, fallbackDuration: number) {
+  const status = player?.status
+
+  if (!status) {
+    return
+  }
+
+  historyStore.updateProgress(
+    savedVideoId,
+    status.currentTimeMs / 1000,
+    status.durationMs > 0 ? status.durationMs / 1000 : fallbackDuration,
+  )
+}
+
+function suspendPlayback() {
+  player?.pause()
+  saveProgress(videoId.value, detail.value?.durationSeconds ?? 0)
+}
+
+function releasePlayer() {
+  saveProgress(videoId.value, detail.value?.durationSeconds ?? 0)
+  player?.destroy()
+  player = null
+  lastSavedAt = 0
 }
 
 async function renderDescription(description: string) {
@@ -398,7 +427,7 @@ async function renderDescription(description: string) {
 
 async function loadRelated() {
   try {
-    related.value = (await fetchRelatedVideos(niconicoStore.client, videoId)).slice(0, 20)
+    related.value = (await fetchRelatedVideos(niconicoStore.client, videoId.value)).slice(0, 20)
   } catch {
     related.value = []
   }
@@ -424,7 +453,7 @@ async function loadComments() {
 
 async function loadVideo() {
   try {
-    const loaded = await fetchWatchDetail(niconicoStore.client, videoId)
+    const loaded = await fetchWatchDetail(niconicoStore.client, videoId.value)
 
     if (isUnmounted) {
       return
@@ -459,7 +488,7 @@ async function toggleLike() {
   isLiking.value = true
 
   try {
-    await setLiked(niconicoStore.client, videoId, next)
+    await setLiked(niconicoStore.client, videoId.value, next)
     current.isLiked = next
     current.likeCount = Math.max(0, current.likeCount + (next ? 1 : -1))
   } catch (error) {
@@ -471,7 +500,7 @@ async function toggleLike() {
 
 async function addWatchLater() {
   try {
-    await addToWatchLater(niconicoStore.client, videoId)
+    await addToWatchLater(niconicoStore.client, videoId.value)
     await showToast(t('nico.actions.addedWatchLater'))
   } catch (error) {
     errorMessage.value = t(nicoErrorKey(error))
@@ -508,7 +537,7 @@ async function presentMylistPicker() {
 
 async function submitAddToMylist(mylistId: number) {
   try {
-    await addToMylist(niconicoStore.client, mylistId, videoId)
+    await addToMylist(niconicoStore.client, mylistId, videoId.value)
     await showToast(t('nico.actions.addedMylist'))
   } catch (error) {
     errorMessage.value = t(nicoErrorKey(error))
@@ -528,7 +557,7 @@ async function submitComment() {
   try {
     await postComment(niconicoStore.client, {
       threadId: current.defaultThreadId,
-      videoId,
+      videoId: videoId.value,
       body,
       vposMs: player?.currentTimeMs ?? 0,
     })
@@ -551,12 +580,12 @@ function togglePlaylistItem() {
   }
 
   if (isSavedToPlaylist.value) {
-    playlistStore.removeFromPlaylist(videoId, NICO_INSTANCE_URL)
+    playlistStore.removeFromPlaylist(videoId.value, NICO_INSTANCE_URL)
     return
   }
 
   playlistStore.addToPlaylist({
-    videoId,
+    videoId: videoId.value,
     videoName: current.title,
     thumbnailPath: current.thumbnailUrl,
     channelName: current.ownerName ?? '',
@@ -570,8 +599,47 @@ function searchTag(tag: string) {
 }
 
 function openVideo(nextVideoId: string) {
-  void router.push(`/tabs/nico/${nextVideoId}`)
+  void router.push(`${NICO_VIDEO_ROUTE_PREFIX}${nextVideoId}`)
 }
+
+function resetVideoState() {
+  detail.value = null
+  related.value = []
+  comments.value = []
+  descriptionHtml.value = ''
+  errorMessage.value = ''
+  commentBody.value = ''
+  resumeSeconds.value = 0
+}
+
+onIonViewWillLeave(() => {
+  suspendPlayback()
+})
+
+watch(
+  () => route.path,
+  (newPath, oldPath) => {
+    if (oldPath.startsWith(NICO_VIDEO_ROUTE_PREFIX) && !newPath.startsWith(NICO_VIDEO_ROUTE_PREFIX)) {
+      suspendPlayback()
+    }
+  },
+)
+
+watch(
+  () => route.params['videoId'],
+  (next) => {
+    const nextVideoId = typeof next === 'string' ? next : ''
+
+    if (nextVideoId.length === 0 || nextVideoId === videoId.value) {
+      return
+    }
+
+    releasePlayer()
+    videoId.value = nextVideoId
+    resetVideoState()
+    void loadVideo()
+  },
+)
 
 onMounted(() => {
   void loadVideo()
@@ -579,19 +647,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   isUnmounted = true
-
-  const status = player?.status
-
-  if (status) {
-    historyStore.updateProgress(
-      videoId,
-      status.currentTimeMs / 1000,
-      status.durationMs > 0 ? status.durationMs / 1000 : (detail.value?.durationSeconds ?? 0),
-    )
-  }
-
-  player?.destroy()
-  player = null
+  releasePlayer()
 })
 </script>
 

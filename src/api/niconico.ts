@@ -5,6 +5,7 @@ import {
   isVideoId,
   NiconicoApiError,
   NiconicoAuthError,
+  NiconicoError,
   NiconicoNetworkError,
   NiconicoTimeoutError,
   sortCommentsByVpos,
@@ -23,6 +24,7 @@ import {
   type WatchLaterItem,
   type WatchResult,
 } from '@kongyo2/niconicojs'
+import { NicoProxyUnavailableError } from './niconicoProxy'
 
 export { extractUserSession, extractVideoId, isVideoId }
 export type {
@@ -297,6 +299,18 @@ export async function fetchSuggestions(
   return client.suggestion.expand(keyword.trim(), withSignal({}, signal))
 }
 
+interface WatchChannel {
+  id?: unknown
+  name?: unknown
+  thumbnail?: { url?: unknown; smallUrl?: unknown }
+}
+
+function readChannel(watch: WatchResult): WatchChannel | null {
+  const channel = watch.data.channel
+
+  return typeof channel === 'object' && channel !== null ? (channel as WatchChannel) : null
+}
+
 function readLikeState(watch: WatchResult): boolean {
   const viewer = watch.data.video['viewer']
 
@@ -313,6 +327,9 @@ export function toWatchDetail(watch: WatchResult): NicoWatchDetail {
   const { data } = watch
   const domand = data.media.domand
   const defaultThread = data.comment.threads.find((thread) => thread.isDefaultPostTarget)
+  const channel = data.owner === null ? readChannel(watch) : null
+  const channelName = typeof channel?.name === 'string' ? channel.name : null
+  const channelIconUrl = typeof channel?.thumbnail?.url === 'string' ? channel.thumbnail.url : null
 
   return {
     videoId: data.video.id,
@@ -332,8 +349,8 @@ export function toWatchDetail(watch: WatchResult): NicoWatchDetail {
     tags: data.tag.items.map((tag) => tag.name),
     genreLabel: data.genre?.label ?? null,
     ownerId: data.owner?.id ?? null,
-    ownerName: data.owner?.nickname ?? null,
-    ownerIconUrl: data.owner?.iconUrl ?? null,
+    ownerName: data.owner?.nickname ?? channelName,
+    ownerIconUrl: data.owner?.iconUrl ?? channelIconUrl,
     seriesId: data.series?.id ?? null,
     seriesTitle: data.series?.title ?? null,
     isLiked: readLikeState(watch),
@@ -494,12 +511,18 @@ export async function fetchMylistItems(
     withSignal({}, params.signal),
   )
 
-  const items = response.data?.mylist?.items ?? []
+  const mylist = response.data?.mylist
+
+  if (mylist === undefined) {
+    throw new NiconicoError(`mylist ${String(mylistId)}: the account namespace returned no mylist`)
+  }
+
+  const items = mylist.items ?? []
 
   return {
     items: items.map(toMylistEntry),
-    totalCount: response.data?.mylist?.totalItemCount ?? items.length,
-    hasNext: response.data?.mylist?.hasNext ?? false,
+    totalCount: mylist.totalItemCount ?? items.length,
+    hasNext: mylist.hasNext ?? false,
   }
 }
 
@@ -636,6 +659,10 @@ export function formatDuration(totalSeconds: number): string {
 }
 
 export function nicoErrorKey(error: unknown): string {
+  if (error instanceof NicoProxyUnavailableError) {
+    return 'nico.errors.proxyUnavailable'
+  }
+
   if (error instanceof NiconicoAuthError) {
     return 'nico.errors.unauthorized'
   }
@@ -649,16 +676,20 @@ export function nicoErrorKey(error: unknown): string {
   }
 
   if (error instanceof NiconicoApiError) {
+    if (error.status === 429 || error.isAbuseBlocked()) {
+      return 'nico.errors.rateLimited'
+    }
+
     if (error.isUnauthorized() || error.status === 403) {
       return 'nico.errors.unauthorized'
     }
 
-    if (error.status === 404) {
-      return 'nico.errors.notFound'
+    if (error.errorCode === 'FORBIDDEN') {
+      return 'nico.errors.forbidden'
     }
 
-    if (error.status === 429 || error.isAbuseBlocked()) {
-      return 'nico.errors.rateLimited'
+    if (error.status === 404) {
+      return 'nico.errors.notFound'
     }
 
     return 'nico.errors.api'

@@ -1,4 +1,3 @@
-
 export const NICO_PROXY_PREFIX = '/nicoapi/'
 
 export const NICO_FORWARDED_HEADER_PREFIX = 'x-nico-fwd-'
@@ -49,6 +48,29 @@ export function toNicoProxyPath(url: string): string | null {
   }
 
   return `${NICO_PROXY_PREFIX}${parsed.hostname}${parsed.pathname}${parsed.search}`
+}
+
+export class NicoProxyUnavailableError extends Error {
+  constructor() {
+    super('The niconico API proxy is not configured (set VITE_NICO_PROXY_BASE for this build).')
+    this.name = 'NicoProxyUnavailableError'
+  }
+}
+
+export function resolveNicoRedirectTarget(currentUrl: string, location: string): string | null {
+  let next: URL
+
+  try {
+    next = new URL(location, currentUrl)
+  } catch {
+    return null
+  }
+
+  if (next.protocol !== 'https:' || !isNicoProxyableHost(next.hostname)) {
+    return null
+  }
+
+  return next.toString()
 }
 
 export function toNicoUpstreamUrl(proxyPath: string): string | null {
@@ -107,7 +129,12 @@ export function toUpstreamHeaders(
     const value = Array.isArray(rawValue) ? rawValue.join(', ') : rawValue
 
     if (lower.startsWith(NICO_FORWARDED_HEADER_PREFIX)) {
-      restored[lower.slice(NICO_FORWARDED_HEADER_PREFIX.length)] = value
+      const restoredName = lower.slice(NICO_FORWARDED_HEADER_PREFIX.length)
+
+      if ((NICO_FORWARDED_REQUEST_HEADERS as readonly string[]).includes(restoredName)) {
+        restored[restoredName] = value
+      }
+
       continue
     }
 

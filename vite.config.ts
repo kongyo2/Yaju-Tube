@@ -8,6 +8,7 @@ import type { Plugin, TransformResult } from 'vite'
 import { configDefaults } from 'vitest/config'
 import {
   NICO_PROXY_PREFIX,
+  resolveNicoRedirectTarget,
   toNicoUpstreamUrl,
   toUpstreamHeaders,
 } from './src/api/niconicoProxy'
@@ -75,14 +76,18 @@ export function createNiconicoProxyMiddleware(fetchImpl: typeof fetch = fetch) {
     }
 
     const method = (req.method ?? 'GET').toUpperCase()
+    const abort = new AbortController()
+    const cancel = () => abort.abort()
+
+    req.on('aborted', cancel)
 
     try {
       const body = method === 'GET' || method === 'HEAD' ? undefined : await readRequestBody(req)
-      const upstream = await fetchImpl(upstreamUrl, {
+      const upstream = await followNicoRedirects(fetchImpl, upstreamUrl, {
         method,
         headers: toUpstreamHeaders(req.headers),
         ...(body === undefined || body.length === 0 ? {} : { body }),
-        redirect: 'follow',
+        signal: abort.signal,
       })
       const text = await upstream.text()
       const contentType = upstream.headers.get('content-type')
@@ -97,8 +102,47 @@ export function createNiconicoProxyMiddleware(fetchImpl: typeof fetch = fetch) {
     } catch (error) {
       res.statusCode = 502
       res.end(`niconico proxy request failed: ${String(error)}`)
+    } finally {
+      req.off('aborted', cancel)
     }
   }
+}
+
+const NICO_PROXY_MAX_REDIRECTS = 5
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+
+async function followNicoRedirects(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit & { method: string },
+): Promise<Response> {
+  let target = url
+  let request: RequestInit & { method: string } = init
+
+  for (let redirects = 0; redirects <= NICO_PROXY_MAX_REDIRECTS; redirects += 1) {
+    const response = await fetchImpl(target, { ...request, redirect: 'manual' })
+
+    if (!REDIRECT_STATUSES.has(response.status)) {
+      return response
+    }
+
+    const location = response.headers.get('location')
+    const next = location === null ? null : resolveNicoRedirectTarget(target, location)
+
+    if (next === null) {
+      throw new Error(`refused to follow a redirect to ${location ?? 'nowhere'}`)
+    }
+
+    target = next
+
+    if (response.status !== 307 && response.status !== 308) {
+      const rest = { ...request }
+      delete rest.body
+      request = { ...rest, method: 'GET' }
+    }
+  }
+
+  throw new Error(`too many redirects from ${url}`)
 }
 
 function readRequestBody(req: IncomingMessage): Promise<Uint8Array> {

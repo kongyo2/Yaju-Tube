@@ -4,6 +4,7 @@ import {
   isNicoProxyableHost,
   NICO_FORWARDED_HEADER_PREFIX,
   NICO_PROXY_PREFIX,
+  resolveNicoRedirectTarget,
   toForwardedHeaders,
   toNicoProxyPath,
   toNicoUpstreamUrl,
@@ -124,7 +125,38 @@ describe('header forwarding', () => {
     })
   })
 
+  it('restores only the headers the browser is known to drop', () => {
+    const upstream = toUpstreamHeaders({
+      [`${NICO_FORWARDED_HEADER_PREFIX}cookie`]: 'user_session=abc',
+      [`${NICO_FORWARDED_HEADER_PREFIX}host`]: 'evil.test',
+      [`${NICO_FORWARDED_HEADER_PREFIX}origin`]: 'https://evil.test',
+      [`${NICO_FORWARDED_HEADER_PREFIX}x-made-up`]: 'nope',
+    })
+
+    expect(upstream).toEqual({ cookie: 'user_session=abc' })
+  })
+
   it('joins repeated header values and skips missing ones', () => {
     expect(toUpstreamHeaders({ 'x-test': ['a', 'b'], 'x-empty': undefined })).toEqual({ 'x-test': 'a, b' })
+  })
+})
+
+describe('resolveNicoRedirectTarget', () => {
+  it('resolves a relative redirect against the current URL', () => {
+    expect(resolveNicoRedirectTarget('https://www.nicovideo.jp/watch/sm9', '/watch/sm10')).toBe(
+      'https://www.nicovideo.jp/watch/sm10',
+    )
+  })
+
+  it('allows a hop to another niconico host', () => {
+    expect(resolveNicoRedirectTarget('https://nico.ms/sm9', 'https://www.nicovideo.jp/watch/sm9')).toBe(
+      'https://www.nicovideo.jp/watch/sm9',
+    )
+  })
+
+  it('refuses to leave niconico or downgrade the scheme', () => {
+    expect(resolveNicoRedirectTarget('https://www.nicovideo.jp/watch/sm9', 'https://evil.test/')).toBeNull()
+    expect(resolveNicoRedirectTarget('https://www.nicovideo.jp/watch/sm9', 'http://www.nicovideo.jp/')).toBeNull()
+    expect(resolveNicoRedirectTarget('https://www.nicovideo.jp/watch/sm9', '//evil.test/')).toBeNull()
   })
 })

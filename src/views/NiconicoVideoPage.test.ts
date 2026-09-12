@@ -142,19 +142,39 @@ async function mountPage(options: { session?: string } = {}) {
   await router.push('/tabs/nico/sm9')
   await router.isReady()
 
-  const wrapper = mount(NiconicoVideoPage, { global: testGlobal(pinia, router, ionicStubs) })
+  const wrapper = mount(NiconicoVideoPage, {
+    attachTo: document.body,
+    global: testGlobal(pinia, router, ionicStubs),
+  })
   await flushPromises()
 
-  return { historyStore, niconicoStore, playlistStore, router, wrapper }
+  const playerWindow = stubPlayerWindow(wrapper)
+
+  return { historyStore, niconicoStore, playlistStore, playerWindow, router, wrapper }
 }
 
-function emitPlayerMetadata(data: Record<string, unknown>) {
-  window.dispatchEvent(
-    new MessageEvent('message', {
-      origin: NICO_EMBED_ORIGIN,
-      data: { sourceConnectorType: 0, playerId: '1', eventName: 'playerMetadataChange', data },
-    }),
-  )
+function stubPlayerWindow(wrapper: VueWrapper): object | null {
+  const iframe = wrapper.find('iframe')
+
+  if (!iframe.exists()) {
+    return null
+  }
+
+  const playerWindow = { postMessage: vi.fn() }
+
+  Object.defineProperty(iframe.element, 'contentWindow', { configurable: true, value: playerWindow })
+
+  return playerWindow
+}
+
+function emitPlayerMetadata(data: Record<string, unknown>, source: unknown) {
+  const event = new MessageEvent('message', {
+    origin: NICO_EMBED_ORIGIN,
+    data: { sourceConnectorType: 0, playerId: '1', eventName: 'playerMetadataChange', data },
+  })
+
+  Object.defineProperty(event, 'source', { value: source })
+  window.dispatchEvent(event)
 }
 
 function buttonWithText(wrapper: VueWrapper, text: string) {
@@ -244,6 +264,19 @@ describe('loading a video', () => {
     expect(router.currentRoute.value.fullPath).toBe('/tabs/nico/sm2')
   })
 
+  it('loads the new video when the route parameter changes', async () => {
+    const { router, wrapper } = await mountPage()
+
+    apiMocks.fetchWatchDetail.mockResolvedValue(watchDetail({ videoId: 'sm2', title: '次の動画' }))
+
+    await router.push('/tabs/nico/sm2')
+    await flushPromises()
+
+    expect(apiMocks.fetchWatchDetail).toHaveBeenLastCalledWith(expect.anything(), 'sm2')
+    expect(wrapper.text()).toContain('次の動画')
+    expect(wrapper.get('iframe').attributes('src')).toBe('https://embed.nicovideo.jp/watch/sm2?jsapi=1&playerId=1')
+  })
+
   it('searches the tapped tag', async () => {
     const { router, wrapper } = await mountPage()
 
@@ -331,9 +364,9 @@ describe('commenting', () => {
   it('posts at the position the embedded player reports', async () => {
     apiMocks.postComment.mockResolvedValue({ id: 'x', no: 2 })
 
-    const { wrapper } = await mountPage({ session: 'user_session_1_abc' })
+    const { playerWindow, wrapper } = await mountPage({ session: 'user_session_1_abc' })
 
-    emitPlayerMetadata({ currentTime: 42_000, duration: 320_000 })
+    emitPlayerMetadata({ currentTime: 42_000, duration: 320_000 }, playerWindow)
     await flushPromises()
 
     await wrapper.get('input').setValue('  テストコメント  ')
@@ -380,12 +413,31 @@ describe('app playlist and progress', () => {
   })
 
   it('stores how far the video was watched', async () => {
-    const { historyStore, wrapper } = await mountPage()
+    const { historyStore, playerWindow, wrapper } = await mountPage()
 
-    emitPlayerMetadata({ currentTime: 65_000, duration: 320_000 })
+    emitPlayerMetadata({ currentTime: 65_000, duration: 320_000 }, playerWindow)
     await flushPromises()
 
     expect(historyStore.getHistoryItem('sm9')).toMatchObject({ progress: 65, duration: 320 })
+
+    wrapper.unmount()
+  })
+
+  it('pauses and stores the position when the page is left', async () => {
+    const { historyStore, playerWindow, router, wrapper } = await mountPage()
+    const postMessage = (playerWindow as { postMessage: ReturnType<typeof vi.fn> }).postMessage
+
+    emitPlayerMetadata({ currentTime: 90_000, duration: 320_000 }, playerWindow)
+    await flushPromises()
+
+    await router.push('/tabs/tab7')
+    await flushPromises()
+
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ eventName: 'pause' }),
+      NICO_EMBED_ORIGIN,
+    )
+    expect(historyStore.getHistoryItem('sm9')).toMatchObject({ progress: 90 })
 
     wrapper.unmount()
   })
@@ -411,22 +463,18 @@ describe('app playlist and progress', () => {
     await router.push('/tabs/nico/sm9')
     await router.isReady()
 
-    const postMessage = vi.fn()
     const wrapper = mount(NiconicoVideoPage, {
       attachTo: document.body,
       global: testGlobal(pinia, router, ionicStubs),
     })
     await flushPromises()
 
-    Object.defineProperty(wrapper.get('iframe').element, 'contentWindow', {
-      configurable: true,
-      value: { postMessage },
-    })
+    const playerWindow = stubPlayerWindow(wrapper) as { postMessage: ReturnType<typeof vi.fn> }
 
-    emitPlayerMetadata({ currentTime: 0, duration: 320_000, isVideoMetaDataLoaded: true })
+    emitPlayerMetadata({ currentTime: 0, duration: 320_000, isVideoMetaDataLoaded: true }, playerWindow)
     await flushPromises()
 
-    expect(postMessage).toHaveBeenCalledWith(
+    expect(playerWindow.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ eventName: 'seek', data: { time: 120_000 } }),
       NICO_EMBED_ORIGIN,
     )

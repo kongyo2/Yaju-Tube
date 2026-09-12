@@ -202,7 +202,8 @@
       "placeholder": "Kommentar schreiben",
       "post": "Senden",
       "posted": "Kommentar gesendet",
-      "loginRequired": "Zum Kommentieren anmelden"
+      "loginRequired": "Zum Kommentieren anmelden",
+      "unavailable": "Dieses Video nimmt keine Kommentare an."
     },
     "actions": {
       "like": "Like",
@@ -234,7 +235,9 @@
       "rateLimited": "Zu viele Anfragen. Bitte kurz warten und erneut versuchen.",
       "api": "Die Niconico-API hat einen Fehler gemeldet.",
       "unexpected": "Ein unerwarteter Fehler ist aufgetreten.",
-      "invalidSession": "Das sieht nicht nach einem user_session-Cookie aus."
+      "invalidSession": "Das sieht nicht nach einem user_session-Cookie aus.",
+      "proxyUnavailable": "Für diesen Build ist kein Niconico-API-Proxy konfiguriert.",
+      "forbidden": "Dieses Video kann nicht abgespielt werden. Es erfordert möglicherweise eine Kanalmitgliedschaft oder einen Kauf."
     },
     "empty": "Keine Videos",
     "page": "Seite {n}"

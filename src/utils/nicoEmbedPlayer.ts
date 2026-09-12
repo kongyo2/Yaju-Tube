@@ -157,7 +157,14 @@ export class NicoEmbedPlayer {
   }
 
   private handleMessage(event: MessageEvent): void {
-    if (this.destroyed || event.origin !== this.origin) {
+    const playerWindow = this.iframe.contentWindow
+
+    if (
+      this.destroyed
+      || playerWindow === null
+      || event.origin !== this.origin
+      || event.source !== playerWindow
+    ) {
       return
     }
 
