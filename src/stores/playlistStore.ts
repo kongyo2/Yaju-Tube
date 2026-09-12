@@ -79,6 +79,7 @@ function parseSettings(input: unknown): PlaylistExportSettings {
 
 function parsePlaylistItem(input: unknown): PlaylistItem {
   const value = requireRecord(input, 'Invalid playlist item')
+  const source = value['source']
 
   return {
     videoId: requireString(value, 'videoId', 'Invalid playlist item'),
@@ -87,6 +88,7 @@ function parsePlaylistItem(input: unknown): PlaylistItem {
     channelName: requireString(value, 'channelName', 'Invalid playlist item'),
     instanceUrl: requireString(value, 'instanceUrl', 'Invalid playlist item'),
     addedAt: requireNumber(value, 'addedAt', 'Invalid playlist item'),
+    ...(source === 'niconico' || source === 'peertube' ? { source } : {}),
   }
 }
 

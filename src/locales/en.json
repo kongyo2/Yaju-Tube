@@ -130,5 +130,116 @@
     "discard": "Discard",
     "nameLength": "Video title must be 3–120 characters",
     "descriptionLength": "Description must be 3–10000 characters"
+  },
+  "nico": {
+    "title": "Niconico",
+    "segment": {
+      "ranking": "Ranking",
+      "search": "Search",
+      "new": "New",
+      "library": "Library"
+    },
+    "ranking": {
+      "genre": "Genre",
+      "term": "Period",
+      "trendTags": "Trending tags",
+      "allTags": "All"
+    },
+    "term": {
+      "hour": "Hourly",
+      "24h": "24 hours",
+      "week": "Weekly",
+      "month": "Monthly",
+      "total": "All time"
+    },
+    "search": {
+      "placeholder": "Search Niconico",
+      "keyword": "Keyword",
+      "tag": "Tag",
+      "sort": "Sort",
+      "suggestions": "Suggestions"
+    },
+    "sort": {
+      "hot": "Popular",
+      "registeredAt": "Newest",
+      "viewCount": "Views",
+      "likeCount": "Likes",
+      "mylistCount": "Mylists",
+      "commentCount": "Comments",
+      "duration": "Duration"
+    },
+    "library": {
+      "mylists": "Mylists",
+      "watchLater": "Watch later",
+      "likes": "Likes",
+      "history": "Watch history",
+      "select": "Show",
+      "selectMylist": "Select a mylist",
+      "createMylist": "Create a mylist",
+      "mylistName": "Mylist name",
+      "deleteMylist": "Delete mylist",
+      "deleteMylistConfirm": "Delete the mylist \"{name}\"?",
+      "removeItem": "Remove",
+      "empty": "Nothing here yet",
+      "loginRequired": "Sign in to Niconico to use this"
+    },
+    "video": {
+      "views": "views",
+      "comments": "comments",
+      "mylists": "mylists",
+      "likes": "likes",
+      "tags": "Tags",
+      "related": "Related videos",
+      "series": "Series",
+      "quality": "Quality",
+      "openOriginal": "Open on Niconico",
+      "loading": "Loading video information..."
+    },
+    "comments": {
+      "title": "Comments",
+      "load": "Load comments",
+      "empty": "No comments yet",
+      "placeholder": "Write a comment",
+      "post": "Post",
+      "posted": "Comment posted",
+      "loginRequired": "Sign in to post a comment",
+      "unavailable": "This video does not accept comments."
+    },
+    "actions": {
+      "like": "Like",
+      "liked": "Liked",
+      "addWatchLater": "Watch later",
+      "addedWatchLater": "Added to Watch later",
+      "addMylist": "Add to mylist",
+      "addedMylist": "Added to the mylist",
+      "noMylists": "No mylists yet",
+      "addPlaylist": "Add to app playlist",
+      "removePlaylist": "Remove from app playlist"
+    },
+    "account": {
+      "title": "Niconico account",
+      "login": "Sign in",
+      "logout": "Sign out",
+      "loggedInAs": "Signed in as {name}",
+      "notLoggedIn": "Not signed in",
+      "sessionPlaceholder": "user_session_1234_abcdef...",
+      "sessionHelp": "Sign in to Niconico in a browser and paste the value of the user_session cookie.",
+      "premium": "Premium member",
+      "verify": "Check session"
+    },
+    "errors": {
+      "timeout": "Niconico did not answer in time.",
+      "network": "Could not reach Niconico.",
+      "unauthorized": "The Niconico session is no longer valid. Please sign in again.",
+      "notFound": "Not found.",
+      "rateLimited": "Too many requests. Please wait a moment and try again.",
+      "api": "The Niconico API returned an error.",
+      "unexpected": "An unexpected error occurred.",
+      "invalidSession": "That does not look like a user_session cookie.",
+      "proxyUnavailable": "No Niconico API proxy is configured for this build.",
+      "forbidden": "This video cannot be played. It may require a channel membership or a purchase."
+    },
+    "empty": "No videos",
+    "page": "Page {n}"
   }
 }

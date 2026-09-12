@@ -243,6 +243,7 @@ import {
 import { timeOutline, trashOutline } from 'ionicons/icons';
 import { useHistoryStore } from '@/stores/historyStore';
 import type { HistoryItem } from '@/stores/historyStore';
+import { isNiconicoRef, savedVideoRoutePath, savedVideoThumbnailUrl } from '@/utils/savedVideo';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 
@@ -252,14 +253,17 @@ const { t } = useI18n();
 
 // サムネイルURLを取得
 const getThumbnailUrl = (path: string, instanceUrl: string) => {
-  return `https://${instanceUrl}${path}`;
+  return savedVideoThumbnailUrl(path, instanceUrl);
 };
 
 // 動画に移動
 const goToVideo = (item: HistoryItem) => {
-  // インスタンスURLを一時的に保存（動画再生用）
-  sessionStorage.setItem('tempInstanceUrl', item.instanceUrl);
-  router.push(`/tabs/video/${item.videoId}`);
+  if (!isNiconicoRef(item)) {
+    // インスタンスURLを一時的に保存（動画再生用）
+    sessionStorage.setItem('tempInstanceUrl', item.instanceUrl);
+  }
+
+  router.push(savedVideoRoutePath(item));
 };
 
 // 再生進行度を取得

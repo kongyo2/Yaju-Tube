@@ -2,9 +2,16 @@
 
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { defineConfig } from 'vite'
 import type { Plugin, TransformResult } from 'vite'
 import { configDefaults } from 'vitest/config'
+import {
+  NICO_PROXY_PREFIX,
+  resolveNicoRedirectTarget,
+  toNicoUpstreamUrl,
+  toUpstreamHeaders,
+} from './src/api/niconicoProxy'
 
 const missingVendorSourcemapEntries = [
   '/node_modules/@ionic/vue/dist/index.js',
@@ -44,6 +51,119 @@ export function suppressMissingVendorSourcemaps(): Plugin {
     name: 'suppress-missing-vendor-sourcemaps',
     enforce: 'post',
     transform: stripMissingVendorSourcemap,
+  }
+}
+
+export function createNiconicoProxyMiddleware(fetchImpl: typeof fetch = fetch) {
+  return async function niconicoProxy(
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: () => void,
+  ): Promise<void> {
+    const requestUrl = req.url ?? ''
+
+    if (!requestUrl.startsWith(NICO_PROXY_PREFIX)) {
+      next()
+      return
+    }
+
+    const upstreamUrl = toNicoUpstreamUrl(requestUrl)
+
+    if (upstreamUrl === null) {
+      res.statusCode = 400
+      res.end('Only niconico hosts can be proxied')
+      return
+    }
+
+    const method = (req.method ?? 'GET').toUpperCase()
+    const abort = new AbortController()
+    const cancel = () => abort.abort()
+
+    req.on('aborted', cancel)
+
+    try {
+      const body = method === 'GET' || method === 'HEAD' ? undefined : await readRequestBody(req)
+      const upstream = await followNicoRedirects(fetchImpl, upstreamUrl, {
+        method,
+        headers: toUpstreamHeaders(req.headers),
+        ...(body === undefined || body.length === 0 ? {} : { body }),
+        signal: abort.signal,
+      })
+      const text = await upstream.text()
+      const contentType = upstream.headers.get('content-type')
+
+      res.statusCode = upstream.status
+
+      if (contentType !== null) {
+        res.setHeader('content-type', contentType)
+      }
+
+      res.end(text)
+    } catch (error) {
+      res.statusCode = 502
+      res.end(`niconico proxy request failed: ${String(error)}`)
+    } finally {
+      req.off('aborted', cancel)
+    }
+  }
+}
+
+const NICO_PROXY_MAX_REDIRECTS = 5
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+
+async function followNicoRedirects(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit & { method: string },
+): Promise<Response> {
+  let target = url
+  let request: RequestInit & { method: string } = init
+
+  for (let redirects = 0; redirects <= NICO_PROXY_MAX_REDIRECTS; redirects += 1) {
+    const response = await fetchImpl(target, { ...request, redirect: 'manual' })
+
+    if (!REDIRECT_STATUSES.has(response.status)) {
+      return response
+    }
+
+    const location = response.headers.get('location')
+    const next = location === null ? null : resolveNicoRedirectTarget(target, location)
+
+    if (next === null) {
+      throw new Error(`refused to follow a redirect to ${location ?? 'nowhere'}`)
+    }
+
+    target = next
+
+    if (response.status !== 307 && response.status !== 308) {
+      const rest = { ...request }
+      delete rest.body
+      request = { ...rest, method: 'GET' }
+    }
+  }
+
+  throw new Error(`too many redirects from ${url}`)
+}
+
+function readRequestBody(req: IncomingMessage): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const chunks: Uint8Array[] = []
+
+    req.on('data', (chunk: Uint8Array) => chunks.push(chunk))
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
+
+export function niconicoProxyPlugin(): Plugin {
+  return {
+    name: 'niconico-api-proxy',
+    configureServer(server) {
+      server.middlewares.use(createNiconicoProxyMiddleware())
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(createNiconicoProxyMiddleware())
+    },
   }
 }
 
@@ -121,6 +241,11 @@ export function manualChunks(id: string): string | undefined {
   ) {
     return 'player-vendor'
   }
+
+  if (packagePath.startsWith('@kongyo2/niconicojs/')) {
+    return 'niconico-vendor'
+  }
+
   return undefined
 }
 
@@ -129,6 +254,7 @@ export default defineConfig({
   plugins: [
     vue(),
     suppressMissingVendorSourcemaps(),
+    niconicoProxyPlugin(),
   ],
   resolve: {
     alias: {

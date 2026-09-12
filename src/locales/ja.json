@@ -130,5 +130,116 @@
     "discard": "破棄",
     "nameLength": "動画タイトルは3〜120文字で入力してください",
     "descriptionLength": "説明は3〜10000文字で入力してください"
+  },
+  "nico": {
+    "title": "ニコニコ動画",
+    "segment": {
+      "ranking": "ランキング",
+      "search": "検索",
+      "new": "新着",
+      "library": "ライブラリ"
+    },
+    "ranking": {
+      "genre": "ジャンル",
+      "term": "期間",
+      "trendTags": "人気のタグ",
+      "allTags": "すべて"
+    },
+    "term": {
+      "hour": "毎時",
+      "24h": "24時間",
+      "week": "週間",
+      "month": "月間",
+      "total": "全期間"
+    },
+    "search": {
+      "placeholder": "ニコニコ動画を検索",
+      "keyword": "キーワード",
+      "tag": "タグ",
+      "sort": "並び替え",
+      "suggestions": "検索候補"
+    },
+    "sort": {
+      "hot": "人気",
+      "registeredAt": "投稿日時",
+      "viewCount": "再生数",
+      "likeCount": "いいね数",
+      "mylistCount": "マイリスト数",
+      "commentCount": "コメント数",
+      "duration": "再生時間"
+    },
+    "library": {
+      "mylists": "マイリスト",
+      "watchLater": "あとで見る",
+      "likes": "いいね",
+      "history": "視聴履歴",
+      "select": "表示する項目",
+      "selectMylist": "マイリストを選択",
+      "createMylist": "マイリストを作成",
+      "mylistName": "マイリスト名",
+      "deleteMylist": "マイリストを削除",
+      "deleteMylistConfirm": "マイリスト「{name}」を削除しますか？",
+      "removeItem": "削除",
+      "empty": "項目がありません",
+      "loginRequired": "ニコニコ動画にログインすると利用できます"
+    },
+    "video": {
+      "views": "再生",
+      "comments": "コメント",
+      "mylists": "マイリスト",
+      "likes": "いいね",
+      "tags": "タグ",
+      "related": "関連動画",
+      "series": "シリーズ",
+      "quality": "画質",
+      "openOriginal": "ニコニコ動画で開く",
+      "loading": "動画情報を取得中..."
+    },
+    "comments": {
+      "title": "コメント",
+      "load": "コメントを読み込む",
+      "empty": "コメントはありません",
+      "placeholder": "コメントを入力",
+      "post": "投稿",
+      "posted": "コメントを投稿しました",
+      "loginRequired": "コメントの投稿にはログインが必要です",
+      "unavailable": "この動画にはコメントを投稿できません。"
+    },
+    "actions": {
+      "like": "いいね",
+      "liked": "いいね済み",
+      "addWatchLater": "あとで見る",
+      "addedWatchLater": "「あとで見る」に追加しました",
+      "addMylist": "マイリストに追加",
+      "addedMylist": "マイリストに追加しました",
+      "noMylists": "マイリストがありません",
+      "addPlaylist": "アプリのマイリストに追加",
+      "removePlaylist": "アプリのマイリストから削除"
+    },
+    "account": {
+      "title": "ニコニコ動画アカウント",
+      "login": "ログイン",
+      "logout": "ログアウト",
+      "loggedInAs": "ログイン中: {name}",
+      "notLoggedIn": "未ログイン",
+      "sessionPlaceholder": "user_session_1234_abcdef...",
+      "sessionHelp": "ブラウザでニコニコ動画にログインし、user_session クッキーの値を貼り付けてください。",
+      "premium": "プレミアム会員",
+      "verify": "セッションを確認"
+    },
+    "errors": {
+      "timeout": "ニコニコ動画への接続がタイムアウトしました。",
+      "network": "ニコニコ動画に接続できませんでした。",
+      "unauthorized": "ニコニコ動画のセッションが無効です。ログインし直してください。",
+      "notFound": "見つかりませんでした。",
+      "rateLimited": "リクエストが多すぎます。しばらく待ってから再度お試しください。",
+      "api": "ニコニコ動画のAPIでエラーが発生しました。",
+      "unexpected": "予期しないエラーが発生しました。",
+      "invalidSession": "user_session クッキーの形式が正しくありません。",
+      "proxyUnavailable": "この環境ではニコニコ動画APIへの中継先が設定されていません。",
+      "forbidden": "この動画は再生できません。チャンネル会員限定や購入が必要な動画の可能性があります。"
+    },
+    "empty": "動画がありません",
+    "page": "ページ {n}"
   }
 }

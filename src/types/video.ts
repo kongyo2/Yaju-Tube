@@ -3,12 +3,15 @@
 // A saved reference to a video on a specific instance. Shared by the watch
 // history and playlist stores, which each add their own timestamp (and, for
 // history, playback progress) on top of these common fields.
+export type VideoSource = 'peertube' | 'niconico';
+
 export interface SavedVideoRef {
   videoId: string;
   videoName: string;
   thumbnailPath: string;
   channelName: string;
   instanceUrl: string;
+  source?: VideoSource;
 }
 
 export interface Video {

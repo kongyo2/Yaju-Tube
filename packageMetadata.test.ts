@@ -29,6 +29,10 @@ describe('package metadata', () => {
     expect(packageJson.dependencies).not.toHaveProperty('cordova-plugin-fullscreen')
   })
 
+  it('ships the niconico client the video features are built on', () => {
+    expect(packageJson.dependencies['@kongyo2/niconicojs']).toBeDefined()
+  })
+
   it('keeps the test-only DOM toolchain off deprecated transitive packages', () => {
     expect(packageJson.devDependencies.jsdom).toBe('^29.1.1')
     expect(packageJson.overrides?.glob).toBe('^13.0.6')

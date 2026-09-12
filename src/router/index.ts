@@ -40,8 +40,17 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('@/views/UploadPage.vue')
       },
       {
+        path: 'tab7',
+        component: () => import('@/views/NiconicoPage.vue')
+      },
+      {
         path: 'video/:videoId',
         component: () => import('@/views/VideoPlayerPage.vue'),
+        props: true
+      },
+      {
+        path: 'nico/:videoId',
+        component: () => import('@/views/NiconicoVideoPage.vue'),
         props: true
       }
     ]
