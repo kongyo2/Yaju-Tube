@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useInstanceStore } from '@/stores/instanceStore';
 import ModalComponent from '@/components/ModalComponent.vue';
+import NiconicoAccountItem from '@/components/NiconicoAccountItem.vue';
 import { useI18n } from 'vue-i18n';
 import '../theme/variables.css';
 
@@ -70,6 +71,8 @@ onMounted(() => {
 
         <ion-item @click="openModal('default')">{{ $t('menu.setDefaultInstance') }}</ion-item>
         <ion-item @click="openModal('add')">{{ $t('menu.addInstance') }}</ion-item>
+
+        <NiconicoAccountItem />
 
         <ModalComponent
           :isOpen="isModalOpen"

@@ -2,9 +2,15 @@
 
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { defineConfig } from 'vite'
 import type { Plugin, TransformResult } from 'vite'
 import { configDefaults } from 'vitest/config'
+import {
+  NICO_PROXY_PREFIX,
+  toNicoUpstreamUrl,
+  toUpstreamHeaders,
+} from './src/api/niconicoProxy'
 
 const missingVendorSourcemapEntries = [
   '/node_modules/@ionic/vue/dist/index.js',
@@ -44,6 +50,76 @@ export function suppressMissingVendorSourcemaps(): Plugin {
     name: 'suppress-missing-vendor-sourcemaps',
     enforce: 'post',
     transform: stripMissingVendorSourcemap,
+  }
+}
+
+export function createNiconicoProxyMiddleware(fetchImpl: typeof fetch = fetch) {
+  return async function niconicoProxy(
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: () => void,
+  ): Promise<void> {
+    const requestUrl = req.url ?? ''
+
+    if (!requestUrl.startsWith(NICO_PROXY_PREFIX)) {
+      next()
+      return
+    }
+
+    const upstreamUrl = toNicoUpstreamUrl(requestUrl)
+
+    if (upstreamUrl === null) {
+      res.statusCode = 400
+      res.end('Only niconico hosts can be proxied')
+      return
+    }
+
+    const method = (req.method ?? 'GET').toUpperCase()
+
+    try {
+      const body = method === 'GET' || method === 'HEAD' ? undefined : await readRequestBody(req)
+      const upstream = await fetchImpl(upstreamUrl, {
+        method,
+        headers: toUpstreamHeaders(req.headers),
+        ...(body === undefined || body.length === 0 ? {} : { body }),
+        redirect: 'follow',
+      })
+      const text = await upstream.text()
+      const contentType = upstream.headers.get('content-type')
+
+      res.statusCode = upstream.status
+
+      if (contentType !== null) {
+        res.setHeader('content-type', contentType)
+      }
+
+      res.end(text)
+    } catch (error) {
+      res.statusCode = 502
+      res.end(`niconico proxy request failed: ${String(error)}`)
+    }
+  }
+}
+
+function readRequestBody(req: IncomingMessage): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const chunks: Uint8Array[] = []
+
+    req.on('data', (chunk: Uint8Array) => chunks.push(chunk))
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
+
+export function niconicoProxyPlugin(): Plugin {
+  return {
+    name: 'niconico-api-proxy',
+    configureServer(server) {
+      server.middlewares.use(createNiconicoProxyMiddleware())
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(createNiconicoProxyMiddleware())
+    },
   }
 }
 
@@ -121,6 +197,11 @@ export function manualChunks(id: string): string | undefined {
   ) {
     return 'player-vendor'
   }
+
+  if (packagePath.startsWith('@kongyo2/niconicojs/')) {
+    return 'niconico-vendor'
+  }
+
   return undefined
 }
 
@@ -129,6 +210,7 @@ export default defineConfig({
   plugins: [
     vue(),
     suppressMissingVendorSourcemaps(),
+    niconicoProxyPlugin(),
   ],
   resolve: {
     alias: {

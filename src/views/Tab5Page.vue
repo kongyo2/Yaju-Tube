@@ -125,6 +125,7 @@ import {
   usePlaylistStore,
 } from '@/stores/playlistStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { isNiconicoRef, savedVideoRoutePath, savedVideoThumbnailUrl } from '@/utils/savedVideo'
 
 const playlistStore = usePlaylistStore()
 const settingsStore = useSettingsStore()
@@ -163,12 +164,15 @@ function applyImportedSettings(settings: PlaylistExportSettings) {
 }
 
 function getThumbnailUrl(path: string, instanceUrl: string) {
-  return `https://${instanceUrl}${path}`
+  return savedVideoThumbnailUrl(path, instanceUrl)
 }
 
 function goToVideo(item: PlaylistItem) {
-  sessionStorage.setItem('tempInstanceUrl', item.instanceUrl)
-  router.push(`/tabs/video/${item.videoId}`)
+  if (!isNiconicoRef(item)) {
+    sessionStorage.setItem('tempInstanceUrl', item.instanceUrl)
+  }
+
+  router.push(savedVideoRoutePath(item))
 }
 
 function removeItem(item: PlaylistItem) {
