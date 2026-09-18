@@ -44,6 +44,23 @@ function selectVideoFile(fileName = PENDING_FILE.fileName, fill = 1) {
   })
 }
 
+function toBytes(body: unknown): number[] {
+  if (typeof body === 'string') {
+    return Array.from(body, (character) => character.charCodeAt(0))
+  }
+  if (ArrayBuffer.isView(body)) {
+    return Array.from(new Uint8Array((body as ArrayBufferView).buffer))
+  }
+
+  return Array.from(new Uint8Array(body as ArrayBuffer))
+}
+
+function byteSummary(body: unknown) {
+  const bytes = toBytes(body)
+
+  return { length: bytes.length, distinct: [...new Set(bytes)] }
+}
+
 function stubDiscard(statusCode: number) {
   return cy
     .intercept('DELETE', `${RESUMABLE_URL}*`, { statusCode, headers: CORS_HEADERS, body: {} })
@@ -91,7 +108,16 @@ describe('tab6 upload', () => {
       cy.clickAria('login')
 
       cy.wait('@oauthClient')
-      cy.wait('@token').its('request.body').should('contain', 'grant_type=password')
+      cy.wait('@token').then((interception) => {
+        const body = new URLSearchParams(String(interception.request.body))
+        expect(Object.fromEntries(body)).to.deep.equal({
+          client_id: 'e2e-client-id',
+          client_secret: 'e2e-client-secret',
+          grant_type: 'password',
+          username: 'e2euser',
+          password: 's3cret',
+        })
+      })
       cy.wait('@me').its('request.headers').should('have.property', 'authorization', 'Bearer e2e-access-token')
 
       cy.contains('.logged-in-as', 'e2euser としてログイン中').should('be.visible')
@@ -294,9 +320,15 @@ describe('tab6 upload', () => {
       cy.wait('@uploadInit')
         .its('request.headers')
         .should('have.property', 'authorization', 'Bearer e2e-access-token')
-      cy.wait('@uploadChunk')
-        .its('request.headers')
-        .should('have.property', 'content-range', `bytes 0-${PENDING_FILE.fileSize - 1}/${PENDING_FILE.fileSize}`)
+      cy.wait('@uploadChunk').then((interception) => {
+        expect(interception.request.headers['content-range']).to.eq(
+          `bytes 0-${PENDING_FILE.fileSize - 1}/${PENDING_FILE.fileSize}`,
+        )
+        expect(byteSummary(interception.request.body)).to.deep.equal({
+          length: PENDING_FILE.fileSize,
+          distinct: [1],
+        })
+      })
 
       cy.contains('.upload-success', 'アップロードが完了しました').should('be.visible')
 
@@ -460,10 +492,56 @@ describe('tab6 upload', () => {
       cy.clickAria('cancel-upload')
 
       cy.wait('@cancelUpload').its('request.url').should('contain', 'upload_id=up-1')
+      cy.contains('.upload-error', 'アップロードに失敗しました').should('exist')
+      cy.get('ion-progress-bar').should('not.exist')
+      cy.get('.upload-success').should('not.exist')
       expectStored('upload', (value) => {
         expect((value as { pending: Record<string, unknown> }).pending).to.deep.equal({})
       })
       cy.get('.resume-banner').should('not.exist')
+    })
+
+    it('keeps the stored offset of the chunks that made it through', () => {
+      const chunkSize = 1024 * 1024
+      const fileSize = chunkSize + 512 * 1024
+      const ranges: string[] = []
+
+      stubUploadInit(PRIMARY_HOST)
+      cy.intercept('PUT', `${RESUMABLE_URL}*`, (req) => {
+        const range = String(req.headers['content-range'] ?? '')
+        ranges.push(range)
+
+        if (ranges.length === 1) {
+          req.reply({
+            statusCode: 308,
+            headers: { ...CORS_HEADERS, range: `bytes=0-${chunkSize - 1}` },
+            body: {},
+          })
+        } else {
+          req.reply({ statusCode: 500, headers: CORS_HEADERS, body: {} })
+        }
+      }).as('uploadChunk')
+
+      cy.get('input[data-testid="file-input"]').selectFile({
+        contents: Cypress.Buffer.from(new Uint8Array(fileSize).fill(1)),
+        fileName: 'large.mp4',
+        mimeType: 'video/mp4',
+        lastModified: PENDING_FILE.fileLastModified,
+      })
+      cy.clickAria('start-upload')
+
+      cy.contains('.upload-error', 'アップロードに失敗しました').should('exist')
+      cy.wrap(null).should(() => {
+        expect(ranges).to.deep.equal([
+          `bytes 0-${chunkSize - 1}/${fileSize}`,
+          `bytes ${chunkSize}-${fileSize - 1}/${fileSize}`,
+        ])
+      })
+      expectStored('upload', (value) => {
+        const pending = (value as { pending: Record<string, { uploadedBytes: number; fileSize: number }> })
+          .pending[pendingUploadKey(PRIMARY_HOST, 'e2euser')]
+        expect(pending).to.include({ uploadedBytes: chunkSize, fileSize })
+      })
     })
   })
 

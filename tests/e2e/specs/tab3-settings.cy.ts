@@ -2,6 +2,7 @@ import {
   PRIMARY_HOST,
   PRIMARY_INSTANCE,
   expectStored,
+  makePlaylistItem,
   stubVideoList,
   videoListBody,
 } from '../support/helpers'
@@ -206,6 +207,25 @@ describe('tab3 settings', () => {
         expect(value).to.eq(null)
       })
     })
+
+    it('hands the saved default instance url to the playlist export', () => {
+      cy.visitApp('/tabs/tab3', { playlist: [makePlaylistItem()] })
+
+      cy.settingsItem('デフォルトインスタンスURLを設定').click()
+      modalInput('デフォルトインスタンスURLを入力').type('https://default.example/')
+      cy.contains('ion-modal ion-button', '保存').click()
+      cy.get('ion-modal').should('not.be.visible')
+
+      cy.tabButton('tab5').click()
+      cy.clickAria('export-playlist')
+      cy.visibleAlert().should('contain', 'マイリストをエクスポート')
+
+      cy.get('ion-alert textarea')
+        .invoke('val')
+        .then((raw) => {
+          expect(JSON.parse(String(raw)).settings.defaultInstanceUrl).to.eq('default.example')
+        })
+    })
   })
 
   describe('language', () => {
@@ -228,6 +248,7 @@ describe('tab3 settings', () => {
       cy.settingsItem('言語設定').find('ion-select').click()
       cy.choosePopoverOption('Deutsch')
 
+      cy.contains('ion-title', 'Einstellungen').should('be.visible')
       cy.window().its('localStorage').invoke('getItem', 'locale').should('eq', 'de')
     })
 
