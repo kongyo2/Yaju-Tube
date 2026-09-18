@@ -12,6 +12,7 @@ import {
 const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
+const FIXED_NOW = new Date('2026-09-18T12:00:00Z').getTime()
 
 function seededHistory() {
   const now = Date.now()
@@ -76,7 +77,8 @@ describe('tab4 watch history', () => {
   })
 
   it('labels recent entries with a relative timestamp', () => {
-    const now = Date.now()
+    const now = FIXED_NOW
+    cy.clock(now, ['Date'])
 
     cy.visitApp('/tabs/tab4', {
       history: [

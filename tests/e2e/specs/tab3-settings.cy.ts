@@ -6,6 +6,10 @@ import {
   videoListBody,
 } from '../support/helpers'
 
+function modalInput(label: string) {
+  return cy.contains('ion-modal ion-item', label).find('input')
+}
+
 describe('tab3 settings', () => {
   describe('display preferences', () => {
     it('changes the page size and persists it', () => {
@@ -105,8 +109,8 @@ describe('tab3 settings', () => {
       cy.get('ion-modal').should('be.visible')
       cy.contains('ion-modal ion-title', 'インスタンスを追加').should('be.visible')
 
-      cy.get('ion-modal ion-input input').eq(0).type('My New Instance')
-      cy.get('ion-modal ion-input input').eq(1).type('new.example')
+      modalInput('名前').type('My New Instance')
+      modalInput('インスタンスURLを入力').type('new.example')
       cy.contains('ion-modal ion-button', '保存').click()
 
       cy.get('ion-modal').should('not.be.visible')
@@ -122,8 +126,8 @@ describe('tab3 settings', () => {
       cy.visitApp('/tabs/tab3')
 
       cy.settingsItem('インスタンスを追加する').click()
-      cy.get('ion-modal ion-input input').eq(0).type('Protocol Instance')
-      cy.get('ion-modal ion-input input').eq(1).type('https://proto.example///')
+      modalInput('名前').type('Protocol Instance')
+      modalInput('インスタンスURLを入力').type('https://proto.example///')
       cy.contains('ion-modal ion-button', '保存').click()
 
       expectStored('instances', (value) => {
@@ -135,7 +139,7 @@ describe('tab3 settings', () => {
       cy.visitApp('/tabs/tab3')
 
       cy.settingsItem('インスタンスを追加する').click()
-      cy.get('ion-modal ion-input input').eq(1).type('nameless.example')
+      modalInput('インスタンスURLを入力').type('nameless.example')
       cy.contains('ion-modal ion-button', '保存').click()
 
       expectStored('instances', (value) => {
@@ -147,8 +151,8 @@ describe('tab3 settings', () => {
       cy.visitApp('/tabs/tab3', { instances: [PRIMARY_INSTANCE] })
 
       cy.settingsItem('インスタンスを追加する').click()
-      cy.get('ion-modal ion-input input').eq(0).type('Duplicate')
-      cy.get('ion-modal ion-input input').eq(1).type(PRIMARY_HOST)
+      modalInput('名前').type('Duplicate')
+      modalInput('インスタンスURLを入力').type(PRIMARY_HOST)
       cy.contains('ion-modal ion-button', '保存').click()
 
       cy.get('ion-modal').should('not.be.visible')
@@ -162,7 +166,7 @@ describe('tab3 settings', () => {
 
       cy.settingsItem('インスタンスを追加する').click()
       cy.get('ion-modal').should('be.visible')
-      cy.get('ion-modal ion-input input').eq(1).type('discarded.example')
+      modalInput('インスタンスURLを入力').type('discarded.example')
       cy.contains('ion-modal ion-button', 'Close').click()
 
       cy.get('ion-modal').should('not.be.visible')
@@ -175,13 +179,13 @@ describe('tab3 settings', () => {
       cy.visitApp('/tabs/tab3')
 
       cy.settingsItem('インスタンスを追加する').click()
-      cy.get('ion-modal ion-input input').eq(0).type('Leftover')
+      modalInput('名前').type('Leftover')
       cy.contains('ion-modal ion-button', 'Close').click()
       cy.get('ion-modal').should('not.be.visible')
 
       cy.settingsItem('インスタンスを追加する').click()
       cy.get('ion-modal').should('be.visible')
-      cy.get('ion-modal ion-input input').eq(0).should('have.value', '')
+      modalInput('名前').should('have.value', '')
     })
 
     it('stores the default instance url through its own modal', () => {
@@ -192,7 +196,7 @@ describe('tab3 settings', () => {
       cy.contains('ion-modal ion-title', 'デフォルトインスタンスを設定').should('be.visible')
 
       cy.get('ion-modal ion-input input').should('have.length', 1)
-      cy.get('ion-modal ion-input input').type('https://default.example/')
+      modalInput('デフォルトインスタンスURLを入力').type('https://default.example/')
       cy.contains('ion-modal ion-button', '保存').click()
 
       expectStored('settings', (value) => {
