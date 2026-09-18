@@ -11,7 +11,6 @@ export default defineConfig({
     screenshotsFolder: 'tests/e2e/screenshots',
     baseUrl: 'http://127.0.0.1:5173',
     setupNodeEvents() {
-      // implement node event listeners here
     },
   },
 });
