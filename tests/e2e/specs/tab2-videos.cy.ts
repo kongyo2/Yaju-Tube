@@ -10,6 +10,10 @@ import {
   videosUrl,
 } from '../support/helpers'
 
+interface ListCall {
+  request: { query: Record<string, string> }
+}
+
 function openVideoList() {
   cy.visitApp('/tabs/tab1', { instances: [PRIMARY_INSTANCE] })
   cy.contains('ion-item', 'E2E Instance').click()
@@ -228,12 +232,18 @@ describe('tab2 video list', () => {
       cy.get('ion-searchbar').find('input').type('keyword')
       cy.wait('@search')
 
+      let callsBeforeCancel = 0
+      cy.get('@videos.all').then((calls) => {
+        callsBeforeCancel = (calls as unknown as ListCall[]).length
+      })
+
       cy.get('ion-searchbar .searchbar-cancel-button').click({ force: true })
 
       cy.get('ion-searchbar').find('input').should('have.value', '')
       cy.get('@videos.all').should((calls) => {
-        const last = (calls as unknown as { request: { query: Record<string, string> } }[]).at(-1)
-        expect(last?.request.query).to.not.have.property('search')
+        const requests = calls as unknown as ListCall[]
+        expect(requests.length).to.be.greaterThan(callsBeforeCancel)
+        expect(requests.at(-1)?.request.query).to.not.have.property('search')
       })
     })
 

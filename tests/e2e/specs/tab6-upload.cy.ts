@@ -15,6 +15,8 @@ import {
   stubUploadChunk,
   stubUploadInit,
   stubVideoDetail,
+  stubVideoList,
+  videoListBody,
 } from '../support/helpers'
 
 const RESUMABLE_URL = `${apiBase(PRIMARY_HOST)}/videos/upload-resumable`
@@ -63,7 +65,19 @@ describe('tab6 upload', () => {
       cy.get('button[aria-label="logout"]').should('not.exist')
     })
 
-    it('prefills the host with the selected instance', () => {
+    it('prefills the host with the instance that is currently selected', () => {
+      stubVideoList(videoListBody([]), PRIMARY_HOST, 'videos')
+
+      cy.visitApp('/tabs/tab1', { instances: [PRIMARY_INSTANCE] })
+      cy.contains('ion-item', 'E2E Instance').click()
+      cy.wait('@videos')
+
+      cy.tabButton('tab6').click()
+
+      loginInput(0).should('have.value', PRIMARY_HOST)
+    })
+
+    it('prefills the host with the built-in default while no instance is selected', () => {
       cy.visitApp('/tabs/tab6', { instances: [PRIMARY_INSTANCE] })
 
       loginInput(0).should('have.value', '810video.com')
