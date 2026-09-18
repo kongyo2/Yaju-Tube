@@ -1,0 +1,16 @@
+{
+  "uuid": "vid-0001",
+  "name": "First E2E Video",
+  "description": "**Bold** intro text\nSecond line",
+  "thumbnailPath": "/static/thumbnails/vid-0001.jpg",
+  "previewPath": "/static/previews/vid-0001.jpg",
+  "duration": 600,
+  "channel": {
+    "name": "e2e-channel",
+    "displayName": "E2E Channel",
+    "host": "e2e.example"
+  },
+  "views": 120,
+  "likes": 10,
+  "publishedAt": "2024-01-01T00:00:00.000Z"
+}

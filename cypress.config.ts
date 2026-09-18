@@ -2,14 +2,16 @@ import { defineConfig } from 'cypress';
 
 export default defineConfig({
   allowCypressEnv: false,
+  fixturesFolder: 'tests/e2e/fixtures',
+  includeShadowDom: true,
   e2e: {
     supportFile: 'tests/e2e/support/e2e.{js,jsx,ts,tsx}',
     specPattern: 'tests/e2e/specs/**/*.cy.{js,jsx,ts,tsx}',
     videosFolder: 'tests/e2e/videos',
     screenshotsFolder: 'tests/e2e/screenshots',
     baseUrl: 'http://127.0.0.1:5173',
+    defaultCommandTimeout: 10000,
     setupNodeEvents() {
-      // implement node event listeners here
     },
   },
 });
