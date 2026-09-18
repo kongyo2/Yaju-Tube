@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "exportedAt": "2024-01-05T00:00:00.000Z",
+  "settings": {
+    "defaultInstanceUrl": "e2e.example",
+    "displayMode": "grid",
+    "itemsPerPage": 30,
+    "locale": "en",
+    "theme": "dark"
+  },
+  "items": [
+    {
+      "videoId": "imp-0001",
+      "videoName": "Imported Video",
+      "thumbnailPath": "/static/thumbnails/imp-0001.jpg",
+      "channelName": "Imported Channel",
+      "instanceUrl": "imported.example",
+      "addedAt": 1700000000000
+    }
+  ]
+}
