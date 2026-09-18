@@ -491,7 +491,10 @@ describe('tab6 upload', () => {
 
       cy.clickAria('cancel-upload')
 
-      cy.wait('@cancelUpload').its('request.url').should('contain', 'upload_id=up-1')
+      cy.wait('@cancelUpload').then((interception) => {
+        expect(interception.request.url).to.contain('upload_id=up-1')
+        expect(interception.request.headers['authorization']).to.eq('Bearer e2e-access-token')
+      })
       cy.contains('.upload-error', 'アップロードに失敗しました').should('exist')
       cy.get('ion-progress-bar').should('not.exist')
       cy.get('.upload-success').should('not.exist')
@@ -564,7 +567,15 @@ describe('tab6 upload', () => {
       selectVideoFile()
       cy.clickAria('start-upload')
 
-      cy.wait('@refresh').its('request.body').should('contain', 'grant_type=refresh_token')
+      cy.wait('@refresh').then((interception) => {
+        const body = new URLSearchParams(String(interception.request.body))
+        expect(Object.fromEntries(body)).to.deep.equal({
+          client_id: 'e2e-client-id',
+          client_secret: 'e2e-client-secret',
+          grant_type: 'refresh_token',
+          refresh_token: 'e2e-refresh-token',
+        })
+      })
       cy.wait('@uploadInit')
         .its('request.headers')
         .should('have.property', 'authorization', 'Bearer refreshed-token')
@@ -665,6 +676,12 @@ describe('tab6 upload', () => {
 
       cy.contains('.upload-success', 'アップロードが完了しました').should('be.visible')
       cy.get('@resumePut.all').should('have.length', 1)
+      cy.wait('@resumePut').then((interception) => {
+        expect(interception.request.headers['content-range']).to.eq(
+          `bytes */${PENDING_FILE.fileSize}`,
+        )
+        expect(toBytes(interception.request.body)).to.have.length(0)
+      })
     })
 
     it('restarts from the first byte when the server reports no offset', () => {
@@ -699,7 +716,10 @@ describe('tab6 upload', () => {
       cy.visitApp('/tabs/tab6', { auth: loggedInAuth(), upload: pendingUploadState() })
       cy.clickAria('discard-upload')
 
-      cy.wait('@cancelUpload').its('request.url').should('contain', 'upload_id=up-pending')
+      cy.wait('@cancelUpload').then((interception) => {
+        expect(interception.request.url).to.contain('upload_id=up-pending')
+        expect(interception.request.headers['authorization']).to.eq('Bearer e2e-access-token')
+      })
       cy.get('.resume-banner').should('not.exist')
       cy.ariaButton('start-upload').should('not.be.disabled')
       expectStored('upload', (value) => {
