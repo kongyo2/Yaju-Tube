@@ -35,9 +35,23 @@ function nameInput() {
   return cy.contains('ion-item', '動画タイトル').find('ion-input input')
 }
 
-function selectVideoFile(fileName = PENDING_FILE.fileName, fill = 1) {
+function fixtureBytes(size = PENDING_FILE.fileSize): Uint8Array {
+  const bytes = new Uint8Array(size)
+
+  for (let index = 0; index < size; index += 1) {
+    bytes[index] = index % 251
+  }
+
+  return bytes
+}
+
+function expectedSlice(start: number, end: number): number[] {
+  return Array.from(fixtureBytes().slice(start, end))
+}
+
+function selectVideoFile(fileName = PENDING_FILE.fileName) {
   cy.get('input[data-testid="file-input"]').selectFile({
-    contents: Cypress.Buffer.from(new Uint8Array(PENDING_FILE.fileSize).fill(fill)),
+    contents: Cypress.Buffer.from(fixtureBytes()),
     fileName,
     mimeType: 'video/mp4',
     lastModified: PENDING_FILE.fileLastModified,
@@ -53,12 +67,6 @@ function toBytes(body: unknown): number[] {
   }
 
   return Array.from(new Uint8Array(body as ArrayBuffer))
-}
-
-function byteSummary(body: unknown) {
-  const bytes = toBytes(body)
-
-  return { length: bytes.length, distinct: [...new Set(bytes)] }
 }
 
 function stubDiscard(statusCode: number) {
@@ -324,10 +332,9 @@ describe('tab6 upload', () => {
         expect(interception.request.headers['content-range']).to.eq(
           `bytes 0-${PENDING_FILE.fileSize - 1}/${PENDING_FILE.fileSize}`,
         )
-        expect(byteSummary(interception.request.body)).to.deep.equal({
-          length: PENDING_FILE.fileSize,
-          distinct: [1],
-        })
+        const sent = toBytes(interception.request.body)
+        expect(sent).to.have.length(PENDING_FILE.fileSize)
+        expect(sent).to.deep.equal(expectedSlice(0, PENDING_FILE.fileSize))
       })
 
       cy.contains('.upload-success', 'アップロードが完了しました').should('be.visible')
@@ -631,6 +638,7 @@ describe('tab6 upload', () => {
 
     it('continues from the byte offset the server reports', () => {
       const ranges: string[] = []
+      let resumedPayload: number[] = []
       cy.intercept('PUT', `${RESUMABLE_URL}*`, (req) => {
         const range = String(req.headers['content-range'] ?? '')
         ranges.push(range)
@@ -641,6 +649,7 @@ describe('tab6 upload', () => {
             body: {},
           })
         } else {
+          resumedPayload = toBytes(req.body)
           req.reply({
             statusCode: 200,
             headers: CORS_HEADERS,
@@ -656,6 +665,7 @@ describe('tab6 upload', () => {
       cy.contains('.upload-success', 'アップロードが完了しました').should('be.visible')
       cy.wrap(null).should(() => {
         expect(ranges).to.deep.equal(['bytes */2048', 'bytes 1024-2047/2048'])
+        expect(resumedPayload).to.deep.equal(expectedSlice(1024, PENDING_FILE.fileSize))
       })
       cy.get('.resume-banner').should('not.exist')
       expectStored('upload', (value) => {
