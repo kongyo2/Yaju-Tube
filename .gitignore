@@ -71,3 +71,7 @@ android/.externalNativeBuild/
 # Gradle
 .gradle/
 *.hprof
+
+# Cypress 実行時の生成物
+tests/e2e/screenshots/
+tests/e2e/videos/
